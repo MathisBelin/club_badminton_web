@@ -1,0 +1,93 @@
+// Schéma de données — application web « Formulaires d'inscription ».
+// Base PostgreSQL (Neon en prod). Modèle calqué sur ce que l'app desktop attend
+// (types de questions, e-mail vérifié, submittedAt/lastSubmittedAt) pour remplacer Google Forms.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// Utilisateur connecté (via Google). Le rôle admin n'est PAS stocké ici :
+/// il est calculé à l'exécution depuis la variable d'env ADMIN_EMAILS.
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  image     String?
+  createdAt DateTime @default(now())
+}
+
+/// Type d'une question. Identique aux types du desktop (FormTemplateItem.Type).
+enum QuestionType {
+  TEXT
+  PARAGRAPH
+  RADIO
+  CHECKBOX
+  DROP_DOWN
+  DATE
+}
+
+/// Un formulaire d'inscription.
+model Form {
+  id                String     @id @default(cuid())
+  title             String
+  description       String     @default("")
+  ownerEmail        String
+  isPublished       Boolean    @default(false) // « accessible » : visible/remplissable par les utilisateurs
+  allowEditResponse Boolean    @default(true)  // le répondant peut modifier sa réponse après envoi
+  singleResponse    Boolean    @default(true)  // une seule réponse par personne (regroupée par e-mail vérifié)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  questions         Question[]
+  responses         Response[]
+
+  @@index([ownerEmail])
+}
+
+/// Une question d'un formulaire.
+model Question {
+  id          String       @id @default(cuid())
+  formId      String
+  form        Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
+  order       Int
+  title       String
+  description String       @default("")
+  type        QuestionType @default(TEXT)
+  required    Boolean      @default(false)
+  options     String[]     @default([]) // pour RADIO / CHECKBOX / DROP_DOWN
+  answers     Answer[]
+
+  @@index([formId])
+}
+
+/// Une soumission d'un répondant. Regroupée par e-mail Google vérifié (identité du répondant).
+model Response {
+  id              String   @id @default(cuid())
+  formId          String
+  form            Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
+  respondentEmail String // e-mail vérifié Google (session)
+  respondentName  String?
+  submittedAt     DateTime @default(now()) // 1re soumission
+  lastSubmittedAt DateTime @default(now()) // dernière modification (parité « Modifié le » desktop)
+  answers         Answer[]
+
+  @@unique([formId, respondentEmail])
+  @@index([formId])
+}
+
+/// Une réponse à une question (valeur en texte ; CHECKBOX = options jointes par « , »).
+model Answer {
+  id         String   @id @default(cuid())
+  responseId String
+  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  value      String   @default("")
+
+  @@index([responseId])
+  @@index([questionId])
+}
