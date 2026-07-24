@@ -21,7 +21,10 @@ model User {
   createdAt DateTime @default(now())
 }
 
-/// Type d'une question. Identique aux types du desktop (FormTemplateItem.Type).
+/// Type d'un élément de formulaire. Les 6 premiers sont les types de questions du
+/// desktop (FormTemplateItem.Type) ; TEXT_BLOCK est un bloc de texte purement
+/// informatif (aucune réponse attendue, à ignorer côté desktop) et TEXT_LIST une
+/// saisie multi-valeurs (valeurs jointes par « , », comme CHECKBOX).
 enum QuestionType {
   TEXT
   PARAGRAPH
@@ -29,15 +32,63 @@ enum QuestionType {
   CHECKBOX
   DROP_DOWN
   DATE
+  TEXT_BLOCK
+  TEXT_LIST
+}
+
+/// Autorisation Google Contacts d'un admin : jeton de rafraîchissement obtenu lors de
+/// l'autorisation « Connecter Google Contacts » (portée contacts.readonly, hors ligne).
+/// Permet au serveur de lire les libellés MÊME quand c'est un répondant qui navigue.
+/// SECRET : ne jamais exposer côté client ni dans une API.
+model GoogleAccount {
+  email        String   @id // e-mail de l'admin (minuscules)
+  refreshToken String
+  scope        String   @default("")
+  updatedAt    DateTime @updatedAt
+}
+
+/// Libellé Contacts du club (groupe Google Contacts), synchronisé depuis Google Contacts
+/// avec l'autorisation d'un admin (voir GoogleAccount). C'est un CACHE : la source reste Google.
+/// Sert à associer un formulaire à UN libellé et à reconnaître les personnes déjà inscrites.
+model ClubLabel {
+  resourceName String            @id // « contactGroups/xxx »
+  name         String
+  ownerEmail   String // admin dont le compte Google Contacts a fourni le libellé
+  updatedAt    DateTime          @updatedAt
+  /// Dernière lecture des MEMBRES de ce libellé (coûteuse) : faite à la demande,
+  /// seulement quand il faut savoir si quelqu'un est déjà inscrit. null = jamais lue.
+  membersSyncedAt DateTime?
+  members      ClubLabelMember[]
+  forms        Form[]
+
+  @@index([ownerEmail])
+}
+
+/// Membre d'un libellé (e-mail du contact), remplacé à chaque synchronisation.
+model ClubLabelMember {
+  labelResource String
+  label         ClubLabel @relation(fields: [labelResource], references: [resourceName], onDelete: Cascade)
+  email         String
+
+  @@id([labelResource, email])
+  @@index([email])
 }
 
 /// Un formulaire d'inscription.
 model Form {
   id                String     @id @default(cuid())
+  /// Libellé Contacts associé (obligatoire à la création) : les membres de ce libellé
+  /// sont déjà inscrits et ne peuvent plus modifier leur réponse.
+  labelResource     String?
+  label             ClubLabel? @relation(fields: [labelResource], references: [resourceName], onDelete: SetNull)
   title             String
   description       String     @default("")
   ownerEmail        String
+  headerImageUrl    String?    // image d'en-tête (bannière) hébergée sur Vercel Blob
   isPublished       Boolean    @default(false) // « accessible » : visible/remplissable par les utilisateurs
+  firstPublishedAt  DateTime?  // 1re mise en ligne : distingue « Brouillon » (jamais publié) de « Inaccessible » (clôturé)
+  termsEnabled      Boolean    @default(false) // afficher des conditions d'inscription à accepter
+  termsText         String     @default("")    // texte de ces conditions
   allowEditResponse Boolean    @default(true)  // le répondant peut modifier sa réponse après envoi
   singleResponse    Boolean    @default(true)  // une seule réponse par personne (regroupée par e-mail vérifié)
   createdAt         DateTime   @default(now())
@@ -48,20 +99,78 @@ model Form {
   @@index([ownerEmail])
 }
 
+/// Format attendu pour les saisies libres (TEXT / TEXT_LIST).
+enum QuestionFormat {
+  EMAIL
+  PHONE
+  INTEGER
+  DECIMAL
+}
+
+/// Champ de fiche contact auquel la réponse à une question libre correspond.
+/// Sert au rapprochement avec les contacts du club (application desktop).
+enum ContactField {
+  FIRST_NAME
+  LAST_NAME
+  PHONE
+  EMAIL
+  SECONDARY_EMAIL
+}
+
 /// Une question d'un formulaire.
 model Question {
-  id          String       @id @default(cuid())
-  formId      String
-  form        Form         @relation(fields: [formId], references: [id], onDelete: Cascade)
-  order       Int
-  title       String
-  description String       @default("")
-  type        QuestionType @default(TEXT)
-  required    Boolean      @default(false)
-  options     String[]     @default([]) // pour RADIO / CHECKBOX / DROP_DOWN
-  answers     Answer[]
+  id            String              @id @default(cuid())
+  formId        String
+  form          Form                @relation(fields: [formId], references: [id], onDelete: Cascade)
+  order         Int
+  title         String
+  description   String              @default("")
+  type          QuestionType        @default(TEXT)
+  required      Boolean             @default(false)
+  options       String[]            @default([]) // pour RADIO / CHECKBOX / DROP_DOWN
+  /// Effet de chaque option, aligné sur `options` : "NONE" ou "WAITLIST"
+  /// (WAITLIST = choisir cette option place le répondant en liste d'attente).
+  optionActions String[]            @default([])
+  format        QuestionFormat? // contrôle de saisie (TEXT / TEXT_LIST uniquement)
+  contactField  ContactField? // rapprochement avec la fiche contact (TEXT / TEXT_LIST)
+  verifyEmail   Boolean             @default(false) // format EMAIL : confirmation par e-mail exigée
+  answers       Answer[]
+  verifications EmailVerification[]
 
   @@index([formId])
+}
+
+/// Modèle de formulaire : configuration complète sérialisée en JSON
+/// (titre, description, image, options, questions), réutilisable à la création.
+model FormTemplate {
+  id         String   @id @default(cuid())
+  name       String
+  ownerEmail String
+  content    Json
+  createdAt  DateTime @default(now())
+
+  @@index([ownerEmail])
+}
+
+/// Demande de vérification d'une adresse e-mail saisie dans une réponse.
+/// Le jeton (secret) circule dans le lien envoyé par e-mail ; la page de
+/// vérification est donc accessible sans connexion.
+/// `responseId` est facultatif : si la réponse est annulée/supprimée, les adresses
+/// DÉJÀ VÉRIFIÉES sont conservées (responseId = null) — seules les demandes en
+/// attente sont supprimées.
+model EmailVerification {
+  id         String    @id @default(cuid())
+  responseId String?
+  response   Response? @relation(fields: [responseId], references: [id], onDelete: SetNull)
+  questionId String
+  question   Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  email      String
+  token      String    @unique
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  verifiedAt DateTime?
+
+  @@index([responseId])
 }
 
 /// Une soumission d'un répondant. Regroupée par e-mail Google vérifié (identité du répondant).
@@ -71,9 +180,12 @@ model Response {
   form            Form     @relation(fields: [formId], references: [id], onDelete: Cascade)
   respondentEmail String // e-mail vérifié Google (session)
   respondentName  String?
+  termsAcceptedAt DateTime? // acceptation des conditions d'inscription (si le formulaire en a)
+  waitlistedAt    DateTime? // 1re mise en liste d'attente : donne l'ordre de priorité
   submittedAt     DateTime @default(now()) // 1re soumission
   lastSubmittedAt DateTime @default(now()) // dernière modification (parité « Modifié le » desktop)
   answers         Answer[]
+  verifications   EmailVerification[]
 
   @@unique([formId, respondentEmail])
   @@index([formId])

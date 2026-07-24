@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { CheckIcon, LinkIcon } from "@/components/icons";
 
 // Construit l'URL absolue côté client (l'origine n'est connue qu'au navigateur).
 function useAbsoluteUrl(path: string) {
@@ -22,9 +23,14 @@ async function copyToClipboard(url: string): Promise<boolean> {
 }
 
 // Bouton compact « Copier le lien » (utilisé dans la liste des formulaires).
-export function CopyLinkButton({ path }: { path: string }) {
+// `accessible = false` : le lien est copiable quand même, mais il ne fonctionnera
+// pour les répondants qu'une fois le formulaire rendu accessible.
+export function CopyLinkButton({ path, accessible = true }: { path: string; accessible?: boolean }) {
   const url = useAbsoluteUrl(path);
   const [copied, setCopied] = useState(false);
+  const label = accessible
+    ? "Copier le lien de partage"
+    : "Copier le lien (il ne fonctionnera qu'une fois le formulaire accessible)";
 
   async function copy() {
     if (await copyToClipboard(url)) {
@@ -37,55 +43,24 @@ export function CopyLinkButton({ path }: { path: string }) {
     <button
       onClick={copy}
       disabled={!url}
-      title="Copier le lien de partage"
-      className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+      title={label}
+      aria-label={label}
+      className={`inline-flex items-center justify-center rounded-md border p-1.5 hover:bg-zinc-100 hover:text-zinc-900 disabled:opacity-50 ${
+        accessible ? "border-zinc-300 text-zinc-600" : "border-zinc-200 text-zinc-400"
+      }`}
     >
-      {copied ? "✓ Copié" : "🔗 Lien"}
+      {copied ? <CheckIcon className="h-4 w-4 text-emerald-600" /> : <LinkIcon />}
     </button>
   );
 }
 
-// Barre de partage : champ en lecture seule + copier + ouvrir (page de configuration).
-export function ShareLinkBar({ path }: { path: string }) {
-  const url = useAbsoluteUrl(path);
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    if (await copyToClipboard(url)) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  }
-
+// Bandeau d'information du constructeur : uniquement le message (le lien lui-même se
+// copie depuis la liste des formulaires, bouton 🔗).
+export function ShareLinkBar() {
   return (
     <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-      <div className="mb-2 text-sm font-medium text-emerald-800">
+      <div className="text-sm font-medium text-emerald-800">
         Lien de partage — toute personne disposant du lien peut répondre (connexion Google requise).
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          readOnly
-          value={url}
-          onFocus={(e) => e.currentTarget.select()}
-          className="min-w-0 flex-1 rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-sm text-zinc-700 outline-none"
-        />
-        <button
-          onClick={copy}
-          disabled={!url}
-          className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-        >
-          {copied ? "✓ Copié" : "Copier"}
-        </button>
-        {url && (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-md border border-emerald-300 bg-white px-3 py-1.5 text-sm text-emerald-700 hover:bg-emerald-100"
-          >
-            Ouvrir ↗
-          </a>
-        )}
       </div>
     </div>
   );

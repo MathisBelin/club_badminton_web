@@ -15,3 +15,21 @@ html {
   background-color: #fafafa; /* zinc-50 */
   color: #18181b; /* zinc-900 */
 }
+
+/* Barre de progression affichée dès le clic sur un lien, jusqu'à l'arrivée sur la
+   nouvelle page (voir src/components/NavigationProgress.tsx). */
+@keyframes nav-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.nav-progress-bar {
+  animation: nav-progress 1.1s ease-in-out infinite;
+}

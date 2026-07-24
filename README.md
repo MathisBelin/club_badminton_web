@@ -3,9 +3,15 @@
 Clone de Google Forms enrichi pour gérer les **formulaires d'inscription** du club de badminton.
 Connexion **Google obligatoire**. Deux rôles :
 
-- **Admin** (liste d'e-mails en config) : créer des formulaires, les rendre accessibles ou non,
-  consulter les répondants et leurs réponses, exporter en CSV.
-- **Utilisateur** : voir et remplir uniquement les formulaires **accessibles**.
+- **Admin** (liste d'e-mails en config) : créer des formulaires (vierges, depuis un **modèle** ou
+  par duplication), les rendre accessibles ou non, consulter les répondants, la **liste d'attente**
+  et les réponses, exporter en CSV.
+- **Utilisateur** : remplir les formulaires reçus **par lien** (ils ne sont pas listés sur l'accueil).
+
+Fonctions notables : image d'en-tête, blocs de texte, questions « texte multiple », **formats de
+saisie** (e-mail / téléphone / entier / décimal) avec **vérification d'adresse par e-mail**,
+**conditions d'inscription** à accepter, **liste d'attente** par option, association des réponses aux
+**champs de contact**, et **API d'intégration** en lecture seule pour l'application desktop.
 
 ## Pile
 
@@ -35,7 +41,14 @@ Connexion **Google obligatoire**. Deux rôles :
    AUTH_GOOGLE_SECRET=…     # secret client OAuth
    DATABASE_URL=…           # URL Neon
    ADMIN_EMAILS=matbelin5@gmail.com
+   BLOB_READ_WRITE_TOKEN=…  # store Vercel Blob (images d'en-tête)
+   GMAIL_USER=…             # compte Gmail expéditeur des e-mails de vérification
+   GMAIL_APP_PASSWORD=…     # mot de passe d'application Google (16 caractères, sans chevrons)
+   MAIL_FROM=Club de badminton <…@gmail.com>
+   INTEGRATION_API_KEY=…    # clé lue par l'app desktop (en-tête x-api-key)
    ```
+   Les trois dernières familles sont facultatives en local : sans elles, seules la vérification
+   d'adresse et l'API d'intégration sont indisponibles.
 
 5. **Créer les tables**
    ```bash
@@ -60,10 +73,13 @@ Connexion **Google obligatoire**. Deux rôles :
 
 1. Pousser le dépôt sur GitHub, importer le projet sur [Vercel](https://vercel.com).
 2. Reporter les variables d'environnement (`AUTH_SECRET`, `AUTH_GOOGLE_ID/SECRET`, `DATABASE_URL`,
-   `ADMIN_EMAILS`) dans les *Environment Variables* Vercel.
+   `ADMIN_EMAILS`, `AUTH_URL`, `BLOB_READ_WRITE_TOKEN`, `INTEGRATION_API_KEY`, et les `GMAIL_*`
+   si l'envoi d'e-mails doit fonctionner en ligne) dans les *Environment Variables* Vercel.
 3. Ajouter l'URI de redirection de production dans Google Cloud :
    `https://<votre-domaine>.vercel.app/api/auth/callback/google`.
 4. Migrations en prod : `npx prisma migrate deploy` (ou via un script de build).
+5. Déploiement en ligne de commande : `vercel --prod --yes` (projet `bad12/bad-web`,
+   alias `https://bad-web-rho.vercel.app`).
 
 ## Structure
 
@@ -75,14 +91,21 @@ src/proxy.ts                  Protection des routes (redirige vers /connexion)
 src/lib/{prisma,admin,session,questions}.ts   Utilitaires (client DB, rôle, gardes, types de questions)
 src/app/actions/{forms,responses}.ts          Server Actions (CRUD formulaires, soumission)
 src/app/connexion             Page de connexion Google
-src/app/page.tsx              Accueil utilisateur (formulaires accessibles)
-src/app/admin/…               Tableau de bord, constructeur, réponses (+ export CSV)
-src/app/forms/[id]/…          Remplissage + confirmation
-src/components/…              AppHeader, FormBuilder, FillForm
+src/app/page.tsx              Accueil (accès par lien pour les utilisateurs)
+src/app/admin/…               Tableau de bord, modèles, constructeur, réponses, liste d'attente (+ CSV)
+src/app/forms/[id]/…          Remplissage, confirmation, suivi des adresses à vérifier
+src/app/verifier/[token]/…    Page publique de vérification d'adresse
+src/app/api/integration/…     API lecture seule pour l'app desktop
+src/components/…              AppHeader, FormBuilder, FillForm, icônes, boutons d'action
 ```
+
+## API d'intégration (app desktop)
+
+Lecture seule, en-tête `x-api-key` = `INTEGRATION_API_KEY` :
+`GET /api/integration/forms?owner=<e-mail>`, `…/forms/[id]/questions`, `…/forms/[id]/responses`.
+C'est la source des **formulaires d'inscription** de l'application desktop, à la place de Google Forms.
 
 ## À venir (hors MVP)
 
-API d'intégration en lecture seule (`/api/integration/…`, clé `INTEGRATION_API_KEY`) pour que
-l'app desktop lise les réponses **à la place de Google Forms** ; règles de réponses
-(liste d'attente / annulation), validations de champs, détection de doublons.
+Règle « annulation » sur une option (le desktop la gère déjà), détection de doublons, gestion des
+modèles depuis le constructeur, affichage de l'acceptation des conditions dans l'export CSV.

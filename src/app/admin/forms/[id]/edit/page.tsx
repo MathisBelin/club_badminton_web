@@ -4,6 +4,9 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import FormBuilder from "@/components/FormBuilder";
 import { ShareLinkBar } from "@/components/ShareLink";
+import { formStatus, STATUS_BADGE, STATUS_LABEL } from "@/lib/formStatus";
+import { PublishToggleButton, SaveTemplateButton } from "@/components/FormActions";
+import FormLabelPicker from "@/components/FormLabelPicker";
 
 // Constructeur d'un formulaire (structure + paramètres).
 export default async function EditFormPage({ params }: { params: Promise<{ id: string }> }) {
@@ -12,9 +15,11 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
 
   const form = await prisma.form.findUnique({
     where: { id },
-    include: { questions: { orderBy: { order: "asc" } } },
+    include: { questions: { orderBy: { order: "asc" } }, label: true },
   });
   if (!form || form.ownerEmail.toLowerCase() !== user.email.toLowerCase()) notFound();
+
+  const status = formStatus(form);
 
   return (
     <>
@@ -22,16 +27,21 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
         <Link href="/admin" className="text-sm text-zinc-500 hover:text-zinc-900">
           ← Retour aux formulaires
         </Link>
-        <div className="flex items-center gap-3 text-sm">
-          {form.isPublished ? (
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-              Accessible
-            </span>
-          ) : (
-            <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500">
-              Brouillon
-            </span>
-          )}
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE[status]}`}>
+            {STATUS_LABEL[status]}
+          </span>
+          <FormLabelPicker
+            formId={form.id}
+            labelName={form.label?.name ?? null}
+            labelResource={form.labelResource}
+          />
+          <PublishToggleButton
+            formId={form.id}
+            isPublished={form.isPublished}
+            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100"
+          />
+          <SaveTemplateButton formId={form.id} defaultName={form.title} />
           <Link href={`/forms/${form.id}`} className="text-emerald-700 hover:underline" target="_blank">
             Aperçu ↗
           </Link>
@@ -40,12 +50,13 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
 
       {form.isPublished ? (
         <div className="mb-6">
-          <ShareLinkBar path={`/forms/${form.id}`} />
+          <ShareLinkBar />
         </div>
       ) : (
         <div className="mb-6 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-500">
-          Ce formulaire est en brouillon. Rendez-le <strong>accessible</strong> (depuis « Mes formulaires »)
-          pour obtenir un lien de partage à diffuser.
+          Ce formulaire est {status === "INACCESSIBLE" ? "clôturé" : "en brouillon"}. Rendez-le{" "}
+          <strong>accessible</strong> pour {status === "INACCESSIBLE" ? "réactiver" : "obtenir"} le lien
+          de partage.
         </div>
       )}
 
@@ -54,15 +65,21 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
           formId: form.id,
           title: form.title,
           description: form.description,
+          headerImageUrl: form.headerImageUrl,
+          termsEnabled: form.termsEnabled,
+          termsText: form.termsText,
           allowEditResponse: form.allowEditResponse,
           singleResponse: form.singleResponse,
           questions: form.questions.map((q) => ({
             id: q.id,
             title: q.title,
-            description: q.description,
             type: q.type,
             required: q.required,
             options: q.options,
+            optionActions: q.optionActions as ("NONE" | "WAITLIST")[],
+            format: q.format,
+            contactField: q.contactField,
+            verifyEmail: q.verifyEmail,
           })),
         }}
       />
