@@ -5,6 +5,7 @@ import { createForm } from "@/app/actions/forms";
 import { syncLabelsFromGoogle, type ClubLabelOption } from "@/app/actions/labels";
 import { Spinner } from "@/components/icons";
 import { NAV_START } from "@/components/NavigationProgress";
+import Select from "@/components/Select";
 
 type Template = { id: string; name: string; questionCount: number };
 
@@ -120,17 +121,16 @@ export default function CreateFormButton({
               </label>
 
               {fromTemplate && templates.length > 0 && (
-                <select
+                <Select
+                  className="w-full"
                   value={templateId}
-                  onChange={(e) => setTemplateId(e.target.value)}
-                  className="w-full rounded-md border border-zinc-300 bg-white p-2 text-sm outline-none focus:border-emerald-400"
-                >
-                  {templates.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.questionCount} question{t.questionCount > 1 ? "s" : ""})
-                    </option>
-                  ))}
-                </select>
+                  onChange={setTemplateId}
+                  ariaLabel="Modèle"
+                  options={templates.map((t) => ({
+                    value: t.id,
+                    label: `${t.name} (${t.questionCount} question${t.questionCount > 1 ? "s" : ""})`,
+                  }))}
+                />
               )}
               <div className="border-t border-zinc-200 pt-3">
                 <label className="block font-medium text-zinc-900" htmlFor="label-select">
@@ -154,18 +154,14 @@ export default function CreateFormButton({
                     Aucun libellé dans vos contacts Google.
                   </p>
                 ) : (
-                  <select
+                  <Select
                     id="label-select"
+                    className="w-full"
                     value={labelResource}
-                    onChange={(e) => setLabelResource(e.target.value)}
-                    className="w-full rounded-md border border-zinc-300 bg-white p-2 text-sm outline-none focus:border-emerald-400"
-                  >
-                    {labels.map((l) => (
-                      <option key={l.resourceName} value={l.resourceName}>
-                        {l.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setLabelResource}
+                    ariaLabel="Libellé Contacts"
+                    options={labels.map((l) => ({ value: l.resourceName, label: l.name }))}
+                  />
                 )}
               </div>
             </div>

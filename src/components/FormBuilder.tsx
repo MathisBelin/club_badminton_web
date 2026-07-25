@@ -15,6 +15,7 @@ import {
 } from "@/lib/questions";
 import { QUESTION_FORMATS, TYPES_WITH_FORMAT, type QuestionFormat } from "@/lib/formats";
 import HeaderImagePicker from "@/components/HeaderImagePicker";
+import Select from "@/components/Select";
 import { useDragAutoScroll } from "@/lib/useDragAutoScroll";
 import { CloseIcon, GripIcon, TextIcon, TrashIcon } from "@/components/icons";
 
@@ -478,17 +479,13 @@ function QuestionEditor({
           />
 
           <div className="flex flex-wrap items-center gap-3">
-            <select
+            <Select
+              className="w-56"
               value={item.type}
-              onChange={(e) => onChange({ type: e.target.value as ItemType })}
-              className="rounded-md border border-zinc-300 bg-white p-2 text-sm text-zinc-700 outline-none"
-            >
-              {QUESTION_TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+              onChange={(v) => onChange({ type: v as ItemType })}
+              ariaLabel="Type de question"
+              options={QUESTION_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+            />
             <label className="flex items-center gap-2 text-sm text-zinc-600">
               <input
                 type="checkbox"
@@ -512,22 +509,18 @@ function QuestionEditor({
                 Format imposé
               </label>
               {item.format !== null && (
-                <select
+                <Select
+                  className="w-44"
                   value={item.format}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     onChange({
-                      format: e.target.value as QuestionFormat,
-                      verifyEmail: e.target.value === "EMAIL" ? item.verifyEmail : false,
+                      format: v as QuestionFormat,
+                      verifyEmail: v === "EMAIL" ? item.verifyEmail : false,
                     })
                   }
-                  className="rounded-md border border-zinc-300 bg-white p-1.5 text-sm text-zinc-700 outline-none"
-                >
-                  {QUESTION_FORMATS.map((f) => (
-                    <option key={f.value} value={f.value}>
-                      {f.label}
-                    </option>
-                  ))}
-                </select>
+                  ariaLabel="Format imposé"
+                  options={QUESTION_FORMATS.map((f) => ({ value: f.value, label: f.label }))}
+                />
               )}
               {item.format === "EMAIL" && (
                 <label className="flex items-center gap-2 text-sm text-zinc-600">
@@ -543,24 +536,21 @@ function QuestionEditor({
           )}
 
           {hasFormat && (
-            <label className="flex flex-wrap items-center gap-2 text-sm text-zinc-600">
+            <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-600">
               Champ de contact associé
-              <select
+              <Select
+                className="w-48"
                 value={item.contactField ?? ""}
-                onChange={(e) =>
-                  onChange({ contactField: (e.target.value || null) as ContactField | null })
-                }
+                onChange={(v) => onChange({ contactField: (v || null) as ContactField | null })}
+                ariaLabel="Champ de contact associé"
                 title="Permet de rapprocher la réponse d'une fiche contact du club"
-                className="rounded-md border border-zinc-300 bg-white p-1.5 text-sm text-zinc-700 outline-none"
-              >
-                <option value="">Aucun</option>
-                {CONTACT_FIELDS.map((f) => (
-                  <option key={f.value} value={f.value}>
-                    {f.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+                isSearchable={false}
+                options={[
+                  { value: "", label: "Aucun" },
+                  ...CONTACT_FIELDS.map((f) => ({ value: f.value, label: f.label })),
+                ]}
+              />
+            </div>
           )}
 
           {hasOptions && (
@@ -659,18 +649,15 @@ function OptionsEditor({
             placeholder={`Option ${i + 1}`}
             className="flex-1 rounded-md border border-zinc-200 p-1.5 text-sm outline-none focus:border-emerald-400"
           />
-          <select
+          <Select
+            className="w-44"
             value={acts[i]}
-            onChange={(e) => setAction(i, e.target.value as OptionAction)}
+            onChange={(v) => setAction(i, v as OptionAction)}
+            ariaLabel="Effet du choix de cette option"
             title="Effet du choix de cette option"
-            className="rounded-md border border-zinc-200 bg-white p-1.5 text-xs text-zinc-600 outline-none"
-          >
-            {OPTION_ACTIONS.map((a) => (
-              <option key={a.value} value={a.value}>
-                {a.label}
-              </option>
-            ))}
-          </select>
+            isSearchable={false}
+            options={OPTION_ACTIONS.map((a) => ({ value: a.value, label: a.label }))}
+          />
           <button
             onClick={() => remove(i)}
             className="inline-flex items-center justify-center rounded p-1 text-zinc-400 hover:text-red-500"

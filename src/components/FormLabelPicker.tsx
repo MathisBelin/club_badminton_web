@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { setFormLabel } from "@/app/actions/forms";
 import { syncLabelsFromGoogle, type ClubLabelOption } from "@/app/actions/labels";
 import { Spinner } from "@/components/icons";
+import Select from "@/components/Select";
 
 // Libellé Contacts d'un formulaire, modifiable depuis le constructeur.
 // La liste est relue dans Google Contacts à l'ouverture (comme à la création).
@@ -91,18 +92,13 @@ export default function FormLabelPicker({
                   {error ?? "Aucun libellé dans vos contacts Google."}
                 </p>
               ) : (
-                <select
+                <Select
+                  className="w-full"
                   value={choice}
-                  onChange={(e) => setChoice(e.target.value)}
-                  aria-label="Libellé Contacts"
-                  className="w-full rounded-md border border-zinc-300 bg-white p-2 text-sm outline-none focus:border-emerald-400"
-                >
-                  {labels.map((l) => (
-                    <option key={l.resourceName} value={l.resourceName}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setChoice}
+                  ariaLabel="Libellé Contacts"
+                  options={labels.map((l) => ({ value: l.resourceName, label: l.name }))}
+                />
               )}
             </div>
 

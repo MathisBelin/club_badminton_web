@@ -6,6 +6,7 @@ import { submitResponse } from "@/app/actions/responses";
 import { MULTI_SEP, isQuestion, type ItemType, type QuestionType } from "@/lib/questions";
 import { CloseIcon } from "@/components/icons";
 import CancelResponseButton from "@/components/CancelResponseButton";
+import Select from "@/components/Select";
 import { checkAnswer, checkValue, formatLabel, type QuestionFormat } from "@/lib/formats";
 
 type Question = {
@@ -166,6 +167,7 @@ export default function FillForm({
                 toggleCheckbox,
                 showError,
                 () => markTouched(q.id),
+                locked,
               )}
             </div>
             {showError && <p className="mt-2 text-xs text-red-600">{invalid}</p>}
@@ -356,6 +358,7 @@ function renderInput(
   toggleCheckbox: (qid: string, option: string, checked: boolean) => void,
   showError: boolean,
   onBlurField: () => void,
+  locked: boolean,
 ) {
   // Bordure rouge (et fond légèrement teinté) quand la saisie est refusée.
   const fieldClass = showError
@@ -430,20 +433,16 @@ function renderInput(
     }
     case "DROP_DOWN":
       return (
-        <select
+        <Select
+          className="w-full"
           value={value}
-          onChange={(e) => setValue(q.id, e.target.value)}
+          onChange={(v) => setValue(q.id, v)}
           onBlur={onBlurField}
-          aria-invalid={showError}
-          className={`w-full rounded-md border bg-white p-2 text-sm outline-none ${fieldClass}`}
-        >
-          <option value="">— Sélectionner —</option>
-          {q.options.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </select>
+          isDisabled={locked}
+          invalid={showError}
+          placeholder="— Sélectionner —"
+          options={q.options.map((opt) => ({ value: opt, label: opt }))}
+        />
       );
     default: // TEXT
       return (
