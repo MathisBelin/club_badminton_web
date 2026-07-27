@@ -32,6 +32,7 @@ un clone de Google Forms enrichi. **Connexion Google obligatoire**. Interface 10
 - **Auth.js v5** (`next-auth`), provider **Google**, sessions **JWT** (pas d'adapter DB).
 - **Prisma** (ORM) + **PostgreSQL** (**Neon** en prod).
 - **Zod** pour la validation des entrées des Server Actions.
+- **react-select** pour **toutes** les listes déroulantes (composant maison `src/components/Select.tsx`).
 - Pas de state manager : **Server Components** + **Server Actions** + composants clients ciblés.
 
 ### 2.2 Organisation du code
@@ -91,6 +92,7 @@ src/components/FormBuilder.tsx (client) Constructeur : questions, types, options
 src/components/FillForm.tsx    (client) Rendu des questions par type + soumission
 src/components/ShareLink.tsx   (client) CopyLinkButton + ShareLinkBar (URL absolue construite côté navigateur)
 src/components/icons.tsx       Icônes SVG monochromes (œil, crayon, graphique, lien, coche, corbeille, image)
+src/components/Select.tsx      (client) Liste déroulante réutilisable « type Select2 » (react-select, thème emerald)
 src/components/HeaderImagePicker.tsx (client) Image d'en-tête : upload direct vers Vercel Blob
 src/components/DeleteFormButton.tsx  (client) Suppression d'un formulaire avec fenêtre de confirmation
 src/components/ResendVerification.tsx (client) Bouton « renvoyer l'e-mail de confirmation »
@@ -310,7 +312,10 @@ l'image d'en-tête du store Blob (échec silencieux si le store n'est pas config
   demandes de vérification **en attente** sont supprimées ; les adresses **vérifiées** sont
   conservées (`responseId` passe à `null`). Retour au formulaire vierge avec `?annulee=1`.
 - **`FillForm`** rend chaque type (texte / paragraphe / date / choix unique / cases / liste
-  déroulante / **texte multiple** / bloc de texte). CHECKBOX et TEXT_LIST sont stockés comme valeurs
+  déroulante / **texte multiple** / bloc de texte). La **liste déroulante** utilise `Select`
+  (react-select) : comme ce n'est pas un contrôle natif, un `<fieldset disabled>` ne suffit pas à
+  la neutraliser — elle reçoit donc `isDisabled` quand la personne est **déjà inscrite** (`locked`).
+  CHECKBOX et TEXT_LIST sont stockés comme valeurs
   jointes par « , ». `TextListInput` garde ses lignes en état local (stabilité pendant la frappe)
   et ne remonte que les valeurs non vides (comparaison après `trim`, les espaces ne comptent pas) :
   - un champ vide s'ajoute dès que le **dernier** champ est renseigné ;

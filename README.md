@@ -18,6 +18,7 @@ saisie** (e-mail / téléphone / entier / décimal) avec **vérification d'adres
 - **Next.js 16** (App Router, TypeScript, React) + **Tailwind CSS**
 - **Auth.js (NextAuth v5)** — provider Google, sessions JWT
 - **Prisma** + **PostgreSQL** (Neon en production)
+- **react-select** — listes déroulantes (composant `src/components/Select.tsx`)
 
 ## Mise en route (local)
 
