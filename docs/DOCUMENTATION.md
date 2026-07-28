@@ -15,8 +15,9 @@ un clone de Google Forms enrichi. **Connexion Google obligatoire**. Interface 10
   - **Admin** (e-mails listés dans `ADMIN_EMAILS`) : crée des formulaires (vierges, depuis un
     **modèle** ou par duplication), les rend **accessibles** ou non, consulte les répondants, la
     **liste d'attente** et les réponses, exporte en CSV, récupère un **lien de partage**.
-  - **Utilisateur** : remplit les formulaires **accessibles** auxquels il accède **par le lien de
-    partage** (ils ne sont pas listés sur l'accueil). Connexion Google requise pour répondre.
+  - **Utilisateur** : remplit les formulaires **accessibles**, qu'il retrouve **listés sur l'accueil**
+    (avec une **recherche par nom**) ou via le **lien de partage** reçu. Connexion Google requise pour
+    répondre.
 - **Identité = e-mail Google vérifié** (comme le desktop) : une réponse par personne, regroupée par
   cet e-mail ; la dernière soumission fait foi.
 - **Lecture seule Google** : authentification (scopes de base openid/email/profile) et, pour les
@@ -67,7 +68,8 @@ src/app/loading.tsx           Écran d'attente par défaut (toute navigation) �
                               admin/loading.tsx et forms/[id]/loading.tsx (cadre conservé)
 src/app/globals.css           Tailwind + thème CLAIR forcé (color-scheme: light)
 src/app/connexion/page.tsx    Page de connexion Google (publique)
-src/app/page.tsx              Accueil : rappel « accès par lien » pour les users, liste pour l'admin
+src/app/page.tsx              Accueil : liste des formulaires accessibles + recherche par nom (users),
+                              raccourci vers les formulaires accessibles (admin)
 
 src/app/admin/layout.tsx      Garde requireAdmin + en-tête
 src/app/admin/page.tsx        Tableau de bord : liste, créer, publier/retirer, supprimer, lien de partage
@@ -104,6 +106,7 @@ src/components/ResponsesFilter.tsx (client) Recherche des réponses (?q=) + masq
 src/components/FormActions.tsx (client) Dupliquer, bascule d'accessibilité, enregistrer comme modèle
 src/components/TemplateActions.tsx (client) Page Modèles : créer un formulaire, supprimer
 src/components/FormsTable.tsx (client) Tableau de bord : liste des formulaires + recherche (titre/libellé)
+src/components/PublicFormsList.tsx (client) Accueil user : cartes des formulaires accessibles + recherche par nom
 src/components/TemplatesTable.tsx (client) Page Modèles : liste + recherche (nom/titre)
 src/components/CancelResponseButton.tsx (client) Annulation d'inscription (avec confirmation)
 src/components/NavigationProgress.tsx (client) Barre de progression dès le clic sur un lien
@@ -384,9 +387,16 @@ reçu un e-mail de confirmation **dans les 7 derniers jours** et n'ayant pas enc
   sans connaître l'hôte côté serveur.
 - Sémantique : **toute personne disposant du lien peut répondre**, connexion Google requise. Si le
   formulaire repasse en brouillon, le lien renvoie « introuvable ».
-- **Accès par lien uniquement** : l'accueil ne liste **plus** les formulaires pour un non-admin
-  (message rappelant d'ouvrir le lien communiqué par le club). Seul l'admin y voit ses formulaires
-  accessibles, en raccourci.
+- **Accès par lien OU par la liste d'accueil** : l'accueil **liste** tous les formulaires
+  **accessibles** (`isPublished`, tous propriétaires confondus) pour **tout le monde** — utilisateurs
+  **et admins** (un admin peut donc voir et **remplir** les formulaires des autres admins) —, avec une
+  **recherche par nom** (`PublicFormsList`, filtrage côté client). Le **lien de partage** reste valable
+  en parallèle. Un formulaire en brouillon ou clôturé n'apparaît pas dans la liste et son lien renvoie
+  « introuvable ». Les admins ont en plus le lien **Administration** vers leur tableau de bord.
+- **Badge « déjà répondu »** : chaque carte de l'accueil indique si le **compte connecté** a déjà une
+  `Response` sur ce formulaire (l'accueil charge les `Response` de l'utilisateur pour les formulaires
+  listés en une requête). Distinct du blocage « déjà inscrit » (§10.1), qui repose sur l'appartenance au
+  libellé Google et n'est évalué qu'à l'ouverture du formulaire.
 
 ---
 
