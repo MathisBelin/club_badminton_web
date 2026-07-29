@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth, signOut } from "@/auth";
 import { isAdmin } from "@/lib/admin";
+import { UserIcon } from "@/components/icons";
 
 // En-tête partagé : marque, navigation (Admin si autorisé) et bloc utilisateur.
 export default async function AppHeader() {
@@ -44,6 +45,15 @@ export default async function AppHeader() {
                   Déconnexion
                 </button>
               </form>
+              {/* Logo de compte tout à droite (accès à « Mon compte »). */}
+              <Link
+                href="/compte"
+                title="Mon compte"
+                aria-label="Mon compte"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-zinc-300 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+              >
+                <UserIcon className="h-5 w-5" />
+              </Link>
             </>
           )}
         </div>

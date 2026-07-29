@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import FormBuilder from "@/components/FormBuilder";
+import { parseAttachments } from "@/lib/attachments";
 import { ShareLinkBar } from "@/components/ShareLink";
 import { formStatus, STATUS_BADGE, STATUS_LABEL } from "@/lib/formStatus";
 import { PublishToggleButton, SaveTemplateButton } from "@/components/FormActions";
@@ -66,6 +67,7 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
           title: form.title,
           description: form.description,
           headerImageUrl: form.headerImageUrl,
+          attachments: parseAttachments(form.attachments),
           termsEnabled: form.termsEnabled,
           termsText: form.termsText,
           allowEditResponse: form.allowEditResponse,

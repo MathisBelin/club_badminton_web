@@ -30,6 +30,28 @@ export function EyeIcon(props: IconProps) {
   );
 }
 
+/// Masquer (œil barré)
+export function EyeOffIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 3l18 18" />
+      <path d="M10.6 6.2A9.9 9.9 0 0 1 12 6c6 0 9.5 6 9.5 6a17 17 0 0 1-3.2 3.7" />
+      <path d="M6.5 7.8A17 17 0 0 0 2.5 12S6 18 12 18c1.4 0 2.7-.3 3.8-.8" />
+      <path d="M9.9 9.9a2.75 2.75 0 0 0 3.9 3.9" />
+    </Svg>
+  );
+}
+
+/// Compte (silhouette)
+export function UserIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </Svg>
+  );
+}
+
 /// Modifier
 export function PencilIcon(props: IconProps) {
   return (

@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { isAdmin } from "@/lib/admin";
 import { requireUser } from "@/lib/session";
 import { isRegistered } from "@/lib/googleContacts";
+import { parseAttachments } from "@/lib/attachments";
 import type { QuestionType } from "@/lib/questions";
 
 // Page de remplissage d'un formulaire. Accessible seulement si publié
@@ -103,6 +104,7 @@ export default async function FillFormPage({
           title={form.title}
           description={form.description}
           headerImageUrl={form.headerImageUrl}
+          attachments={parseAttachments(form.attachments)}
           respondentEmail={user.email}
           locked={locked}
           alreadyAnswered={!!existing}

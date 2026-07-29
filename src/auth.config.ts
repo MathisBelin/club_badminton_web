@@ -30,7 +30,9 @@ export const authConfig = {
       },
     }),
   ],
-  session: { strategy: "jwt" },
+  // Sessions JWT conservées 30 jours (cookie) : c'est le « cache » de connexion —
+  // l'utilisateur n'a pas à ressaisir son mot de passe à chaque visite.
+  session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 30 },
   trustHost: true,
   pages: { signIn: "/connexion" },
   callbacks: {

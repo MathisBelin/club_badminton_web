@@ -11,14 +11,49 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// Utilisateur connecté (via Google). Le rôle admin n'est PAS stocké ici :
-/// il est calculé à l'exécution depuis la variable d'env ADMIN_EMAILS.
+/// Mode de connexion d'un compte : Google (OAuth) ou compte interne (e-mail + mot de passe).
+enum AccountProvider {
+  GOOGLE
+  CREDENTIALS
+}
+
+/// Utilisateur connecté. Deux modes coexistent : Google (OAuth) et compte interne
+/// (e-mail + mot de passe, pour les membres sans adresse Gmail). Le rôle admin n'est
+/// PAS stocké ici : il est calculé à l'exécution depuis la variable d'env ADMIN_EMAILS.
 model User {
+  id                 String          @id @default(cuid())
+  email              String          @unique
+  name               String?
+  firstName          String? // compte interne : prénom
+  lastName           String? // compte interne : nom
+  image              String?
+  /// Empreinte bcrypt du mot de passe (compte interne uniquement ; null pour Google).
+  /// JAMAIS renvoyée au client. Irréversible : l'admin ne peut que RÉINITIALISER.
+  passwordHash       String?
+  provider           AccountProvider @default(GOOGLE)
+  /// Date de vérification de l'adresse (compte interne). Exigée pour se connecter
+  /// seulement quand le réglage « vérification de l'e-mail » est actif. Google = null
+  /// (l'adresse est déjà vérifiée par Google, aucune vérification interne demandée).
+  emailVerifiedAt    DateTime?
+  /// Vrai si l'admin a généré un mot de passe temporaire : à changer à la prochaine connexion.
+  mustChangePassword Boolean         @default(false)
+  createdAt          DateTime        @default(now())
+  accountVerifications AccountVerification[]
+}
+
+/// Demande de vérification de l'adresse e-mail d'un COMPTE interne (distincte de
+/// EmailVerification, qui concerne les adresses saisies dans les réponses). Le jeton
+/// circule dans le lien envoyé par e-mail à la création du compte.
+model AccountVerification {
   id        String   @id @default(cuid())
-  email     String   @unique
-  name      String?
-  image     String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
   createdAt DateTime @default(now())
+  expiresAt DateTime
+  verifiedAt DateTime?
+
+  @@index([userId])
 }
 
 /// Type d'un élément de formulaire. Les 6 premiers sont les types de questions du
@@ -85,6 +120,10 @@ model Form {
   description       String     @default("")
   ownerEmail        String
   headerImageUrl    String?    // image d'en-tête (bannière) hébergée sur Vercel Blob
+  /// Documents joints publics attachés par l'admin (ex. RIB) : tableau JSON
+  /// [{ url, filename, contentType, size }] hébergé sur Vercel Blob (accès public).
+  /// Affiché à tous ceux qui ouvrent le formulaire.
+  attachments       Json       @default("[]")
   isPublished       Boolean    @default(false) // « accessible » : visible/remplissable par les utilisateurs
   firstPublishedAt  DateTime?  // 1re mise en ligne : distingue « Brouillon » (jamais publié) de « Inaccessible » (clôturé)
   termsEnabled      Boolean    @default(false) // afficher des conditions d'inscription à accepter

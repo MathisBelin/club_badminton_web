@@ -71,6 +71,33 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 }
 
+/// E-mail de confirmation envoyé à la CRÉATION d'un compte interne (vérification d'adresse).
+export async function sendAccountVerificationEmail(
+  to: string,
+  verifyUrl: string,
+): Promise<SendResult> {
+  const subject = "Confirmez votre adresse — Formulaires du club";
+  const text =
+    `Vous venez de créer un compte sur les formulaires du club.\n\n` +
+    `Cliquez sur ce lien pour confirmer votre adresse et activer votre compte :\n${verifyUrl}\n\n` +
+    `Ce lien est valable 7 jours. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.`;
+  const html = `
+    <div style="font-family:system-ui,sans-serif;color:#18181b;line-height:1.5">
+      <p>Vous venez de créer un compte sur les <strong>formulaires du club</strong>.</p>
+      <p>Confirmez votre adresse pour activer votre compte :</p>
+      <p>
+        <a href="${escapeHtml(verifyUrl)}"
+           style="display:inline-block;background:#059669;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">
+          Confirmer mon adresse
+        </a>
+      </p>
+      <p style="font-size:13px;color:#71717a">
+        Lien valable 7 jours. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.
+      </p>
+    </div>`;
+  return sendMail(to, subject, html, text);
+}
+
 /// E-mail de confirmation d'adresse envoyé après l'envoi d'un formulaire.
 export async function sendVerificationEmail(
   to: string,

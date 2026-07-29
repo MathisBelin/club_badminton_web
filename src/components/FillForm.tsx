@@ -8,6 +8,7 @@ import { CloseIcon } from "@/components/icons";
 import CancelResponseButton from "@/components/CancelResponseButton";
 import Select from "@/components/Select";
 import { checkAnswer, checkValue, formatLabel, type QuestionFormat } from "@/lib/formats";
+import { humanSize, type Attachment } from "@/lib/attachments";
 
 type Question = {
   id: string;
@@ -27,6 +28,7 @@ export default function FillForm({
   title,
   description,
   headerImageUrl,
+  attachments,
   respondentEmail,
   locked,
   alreadyAnswered,
@@ -39,6 +41,7 @@ export default function FillForm({
   title: string;
   description: string;
   headerImageUrl: string | null;
+  attachments: Attachment[];
   respondentEmail: string;
   alreadyAnswered: boolean;
   locked: boolean;
@@ -132,6 +135,27 @@ export default function FillForm({
           <p className="mt-3 text-xs text-zinc-400">Connecté en tant que {respondentEmail}</p>
         </div>
       </div>
+
+      {attachments.length > 0 && (
+        <div className="rounded-xl border border-zinc-200 bg-white p-5">
+          <h2 className="text-sm font-medium text-zinc-900">Documents</h2>
+          <ul className="mt-3 space-y-2">
+            {attachments.map((a) => (
+              <li key={a.url}>
+                <a
+                  href={a.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm text-emerald-700 hover:underline"
+                >
+                  📎 {a.filename}
+                  {a.size > 0 && <span className="text-xs text-zinc-400">({humanSize(a.size)})</span>}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {questions.map((q) => {
         const invalid = isQuestion(q.type) ? questionError(q) : null;

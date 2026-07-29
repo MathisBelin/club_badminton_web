@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import { TYPES_WITH_FORMAT } from "@/lib/formats";
+import { attachmentsSchema, parseAttachments } from "@/lib/attachments";
 
 // TEXT_BLOCK = bloc de texte informatif (pas une question) : son « titre » porte le texte affiché.
 const ItemTypes = [
@@ -44,6 +45,8 @@ const saveSchema = z.object({
   description: z.string().trim().default(""),
   // URL de l'image d'en-tête (Vercel Blob) ; null = aucune image.
   headerImageUrl: z.string().url().nullable().default(null),
+  // Documents joints publics (ex. RIB) hébergés sur Vercel Blob.
+  attachments: attachmentsSchema,
   // Conditions d'inscription : affichées (et à accepter) seulement si l'option est activée.
   termsEnabled: z.boolean().default(false),
   termsText: z.string().trim().default(""),
@@ -67,6 +70,7 @@ const templateSchema = z.object({
   title: z.string().default("Nouveau formulaire"),
   description: z.string().default(""),
   headerImageUrl: z.string().nullable().default(null),
+  attachments: attachmentsSchema,
   termsEnabled: z.boolean().default(false),
   termsText: z.string().default(""),
   allowEditResponse: z.boolean().default(true),
@@ -149,6 +153,7 @@ export async function createForm(templateId?: string, labelResource?: string) {
           title: content.title,
           description: content.description,
           headerImageUrl: content.headerImageUrl,
+          attachments: content.attachments,
           termsEnabled: content.termsEnabled,
           termsText: content.termsText,
           allowEditResponse: content.allowEditResponse,
@@ -181,6 +186,7 @@ export async function duplicateForm(formId: string) {
       title: await uniqueTitle(user.email, source.title),
       description: source.description,
       headerImageUrl: source.headerImageUrl,
+      attachments: parseAttachments(source.attachments),
       termsEnabled: source.termsEnabled,
       termsText: source.termsText,
       allowEditResponse: source.allowEditResponse,
@@ -237,6 +243,7 @@ export async function saveAsTemplate(formId: string, name: string) {
     title: form.title,
     description: form.description,
     headerImageUrl: form.headerImageUrl,
+    attachments: parseAttachments(form.attachments),
     termsEnabled: form.termsEnabled,
     termsText: form.termsText,
     allowEditResponse: form.allowEditResponse,
@@ -289,6 +296,7 @@ export async function saveForm(input: SaveFormInput) {
         title: data.title,
         description: data.description,
         headerImageUrl: data.headerImageUrl,
+        attachments: data.attachments,
         termsEnabled: data.termsEnabled,
         termsText: data.termsText,
         allowEditResponse: data.allowEditResponse,
@@ -389,10 +397,12 @@ export async function deleteForm(formId: string) {
   await assertOwner(formId, user.email);
   const form = await prisma.form.findUnique({
     where: { id: formId },
-    select: { headerImageUrl: true },
+    select: { headerImageUrl: true, attachments: true },
   });
   await prisma.form.delete({ where: { id: formId } });
   if (form?.headerImageUrl) await deleteBlob(form.headerImageUrl);
+  // Nettoyage best-effort des documents joints hébergés sur Blob.
+  for (const a of parseAttachments(form?.attachments)) await deleteBlob(a.url);
   revalidatePath("/admin");
 }
 

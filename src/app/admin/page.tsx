@@ -74,6 +74,12 @@ export default async function AdminDashboard() {
           >
             Modèles{templates.length > 0 && ` (${templates.length})`}
           </Link>
+          <Link
+            href="/admin/comptes"
+            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+          >
+            Comptes
+          </Link>
           <CreateFormButton templates={templates} labels={labels} />
         </div>
       </div>

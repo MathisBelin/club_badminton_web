@@ -14,7 +14,9 @@ import {
   type OptionAction,
 } from "@/lib/questions";
 import { QUESTION_FORMATS, TYPES_WITH_FORMAT, type QuestionFormat } from "@/lib/formats";
+import type { Attachment } from "@/lib/attachments";
 import HeaderImagePicker from "@/components/HeaderImagePicker";
+import AttachmentsPicker from "@/components/AttachmentsPicker";
 import Select from "@/components/Select";
 import { useDragAutoScroll } from "@/lib/useDragAutoScroll";
 import { CloseIcon, GripIcon, TextIcon, TrashIcon } from "@/components/icons";
@@ -40,6 +42,7 @@ type Props = {
     title: string;
     description: string;
     headerImageUrl: string | null;
+    attachments: Attachment[];
     termsEnabled: boolean;
     termsText: string;
     allowEditResponse: boolean;
@@ -66,6 +69,7 @@ export default function FormBuilder({ initial }: Props) {
   const [title, setTitle] = useState(initial.title);
   const [description, setDescription] = useState(initial.description);
   const [headerImageUrl, setHeaderImageUrl] = useState<string | null>(initial.headerImageUrl);
+  const [attachments, setAttachments] = useState<Attachment[]>(initial.attachments);
   const [termsEnabled, setTermsEnabled] = useState(initial.termsEnabled);
   const [termsText, setTermsText] = useState(initial.termsText);
   const [allowEditResponse, setAllowEditResponse] = useState(initial.allowEditResponse);
@@ -213,6 +217,7 @@ export default function FormBuilder({ initial }: Props) {
       title: title.trim(),
       description: description.trim(),
       headerImageUrl,
+      attachments,
       termsEnabled,
       termsText: termsText.trim(),
       allowEditResponse,
@@ -333,6 +338,16 @@ export default function FormBuilder({ initial }: Props) {
           Ajouter du texte
         </button>
       </div>
+
+      {/* Documents joints : fichiers publics attachés au formulaire (ex. RIB), visibles par tous. */}
+      <section className="rounded-xl border border-zinc-200 bg-white p-5">
+        <h3 className="text-sm font-medium text-zinc-900">Documents joints</h3>
+        <p className="mb-3 mt-1 text-xs text-zinc-500">
+          Fichiers (PDF ou image) affichés sur le formulaire et téléchargeables par toutes les
+          personnes qui l&apos;ouvrent — par exemple un RIB.
+        </p>
+        <AttachmentsPicker value={attachments} onChange={setAttachments} />
+      </section>
 
       {/* Conditions d'inscription : affichées en fin de formulaire, acceptation obligatoire. */}
       <section className="rounded-xl border border-zinc-200 bg-white p-5">

@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
+import CredentialsLoginForm from "@/components/CredentialsLoginForm";
 
-// Page de connexion (publique). Bouton unique « Se connecter avec Google ».
+// Page de connexion (publique) : Google OU e-mail/mot de passe (compte interne).
 export default async function ConnexionPage({
   searchParams,
 }: {
@@ -18,9 +19,7 @@ export default async function ConnexionPage({
         <div className="mb-6 text-center">
           <div className="text-4xl">🏸</div>
           <h1 className="mt-3 text-xl font-semibold text-zinc-900">Formulaires du club</h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Connexion Google requise pour accéder aux formulaires.
-          </p>
+          <p className="mt-1 text-sm text-zinc-500">Connectez-vous pour accéder aux formulaires.</p>
         </div>
 
         <form
@@ -34,9 +33,17 @@ export default async function ConnexionPage({
             className="flex w-full items-center justify-center gap-3 rounded-lg border border-zinc-300 bg-white px-4 py-2.5 font-medium text-zinc-700 transition hover:bg-zinc-50"
           >
             <GoogleIcon />
-            Se connecter avec Google
+            Continuer avec Google
           </button>
         </form>
+
+        <div className="my-5 flex items-center gap-3 text-xs text-zinc-400">
+          <span className="h-px flex-1 bg-zinc-200" />
+          ou
+          <span className="h-px flex-1 bg-zinc-200" />
+        </div>
+
+        <CredentialsLoginForm callbackUrl={callbackUrl} />
       </div>
     </div>
   );

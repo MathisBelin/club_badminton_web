@@ -1,14 +1,17 @@
 # Formulaires du club — application web
 
 Clone de Google Forms enrichi pour gérer les **formulaires d'inscription** du club de badminton.
-Connexion **Google obligatoire**. Deux rôles :
+Connexion obligatoire, au choix **Google** ou **compte interne** (e-mail + mot de passe, pour les
+membres sans adresse Gmail). Deux rôles :
 
 - **Admin** (liste d'e-mails en config) : créer des formulaires (vierges, depuis un **modèle** ou
   par duplication), les rendre accessibles ou non, consulter les répondants, la **liste d'attente**
   et les réponses, exporter en CSV.
 - **Utilisateur** : remplir les formulaires reçus **par lien** (ils ne sont pas listés sur l'accueil).
 
-Fonctions notables : image d'en-tête, blocs de texte, questions « texte multiple », **formats de
+Fonctions notables : **comptes internes** (inscription avec vérification d'e-mail systématique,
+« Mon compte », gestion des comptes admin avec mot de passe temporaire), **documents joints** publics au formulaire
+(ex. RIB), image d'en-tête, blocs de texte, questions « texte multiple », **formats de
 saisie** (e-mail / téléphone / entier / décimal) avec **vérification d'adresse par e-mail**,
 **conditions d'inscription** à accepter, **liste d'attente** par option, association des réponses aux
 **champs de contact**, et **API d'intégration** en lecture seule pour l'application desktop.

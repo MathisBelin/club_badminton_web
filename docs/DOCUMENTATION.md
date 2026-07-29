@@ -1,7 +1,8 @@
 # Documentation technique — Formulaires du club (app web)
 
 Application **web (Next.js 16)** de gestion des **formulaires d'inscription** d'un club de badminton :
-un clone de Google Forms enrichi. **Connexion Google obligatoire**. Interface 100 % en français.
+un clone de Google Forms enrichi. **Connexion obligatoire** : au choix **Google** ou un **compte
+interne** (e-mail + mot de passe, pour les membres sans adresse Gmail). Interface 100 % en français.
 
 > Projet **séparé** du desktop WPF (`F:\Projets\Pro\Bad\Bad-desktop`). Il **remplace** désormais la
 > dépendance Google Forms de ce desktop, qui lit les formulaires et les réponses via l'**API
@@ -18,11 +19,19 @@ un clone de Google Forms enrichi. **Connexion Google obligatoire**. Interface 10
   - **Utilisateur** : remplit les formulaires **accessibles**, qu'il retrouve **listés sur l'accueil**
     (avec une **recherche par nom**) ou via le **lien de partage** reçu. Connexion Google requise pour
     répondre.
-- **Identité = e-mail Google vérifié** (comme le desktop) : une réponse par personne, regroupée par
+- **Identité = e-mail** (Google vérifié, ou compte interne) : une réponse par personne, regroupée par
   cet e-mail ; la dernière soumission fait foi.
+- **Deux modes de connexion** (§4) : **Google** (OAuth) et **compte interne** (e-mail + mot de passe,
+  haché bcrypt). Les deux coexistent sur `/connexion`. Le rôle admin (`ADMIN_EMAILS`) s'applique quel
+  que soit le mode.
 - **Lecture seule Google** : authentification (scopes de base openid/email/profile) et, pour les
   **admins qui l'autorisent**, lecture des **libellés Google Contacts** (`contacts.readonly`, §10.1) ;
   **aucune écriture** dans Google.
+- **Comptes internes** (§4bis) : création (nom/prénom/e-mail/mot de passe), **unicité de l'e-mail**,
+  **vérification d'adresse systématique** (un lien de confirmation par e-mail est **toujours** exigé
+  avant la 1re connexion), page **« Mon compte »** (modifier profil + mot de passe) et menu admin
+  **« Gestion des comptes »** (réinitialiser un mot de passe → mot de passe temporaire copiable,
+  supprimer un compte).
 
 ---
 
@@ -113,6 +122,13 @@ src/components/NavigationProgress.tsx (client) Barre de progression dès le clic
 src/components/PageLoader.tsx  Écran d'attente commun aux fichiers loading.tsx
 ```
 
+**Fichiers ajoutés pour les comptes internes & pièces jointes** (détails §4bis / §5.5) :
+`src/lib/{password,accountVerification,attachments}.ts`,
+`src/app/actions/{auth,account,adminAccounts}.ts`,
+`src/app/{inscription,inscription/verification,verifier-compte/[token],compte}/…`,
+`src/app/admin/comptes/…`,
+`src/components/{CredentialsLoginForm,RegisterForm,PasswordInput,ResendAccountVerification,ProfileForm,ChangePasswordForm,AccountsTable,AttachmentsPicker}.tsx`.
+
 ### 2.3 Navigation & protection
 - **`src/proxy.ts`** (convention Next 16, remplace `middleware.ts`) applique Auth.js à toutes les
   routes **sauf** `api/auth`, `api/blob`, `api/integration`, `/connexion`, `/verifier/*` et les assets. Le callback `authorized` autorise
@@ -133,8 +149,13 @@ src/components/PageLoader.tsx  Écran d'attente commun aux fichiers loading.tsx
 
 ## 3. Modèle de données (Prisma / PostgreSQL)
 
-- **User** : `id`, `email` (unique), `name?`, `image?`, `createdAt`. Upsert à chaque connexion.
-  Le rôle admin **n'est pas** stocké (calculé via `ADMIN_EMAILS`).
+- **User** : `id`, `email` (unique), `name?`, `firstName?`, `lastName?`, `image?`, `passwordHash?`
+  (bcrypt, compte interne), `provider` (`GOOGLE`/`CREDENTIALS`), `emailVerifiedAt?`,
+  `mustChangePassword`, `createdAt`. Upsert à chaque connexion Google ; créé par `register` pour un
+  compte interne. Le rôle admin **n'est pas** stocké (calculé via `ADMIN_EMAILS`). Voir §4bis.
+- **AccountVerification** : `id`, `userId`, `token` (unique), `createdAt`, `expiresAt` (7 j),
+  `verifiedAt?` — vérification de l'adresse d'un **compte** interne (distincte de `EmailVerification`,
+  qui vise les adresses **saisies dans les réponses**).
 - **enum QuestionType** : `TEXT`, `PARAGRAPH`, `RADIO`, `CHECKBOX`, `DROP_DOWN`, `DATE`
   (identiques aux types du desktop `FormTemplateItem.Type`), plus deux types **propres au web** :
   - **`TEXT_BLOCK`** : bloc de texte informatif, affiché dans le formulaire, **aucune réponse
@@ -147,7 +168,8 @@ src/components/PageLoader.tsx  Écran d'attente commun aux fichiers loading.tsx
   ⚠️ L'API d'intégration desktop (§10) devra **ignorer `TEXT_BLOCK`** et traiter `TEXT_LIST`
   comme du texte.
 - **Form** : `id` (cuid), `title`, `description`, `ownerEmail`, `headerImageUrl?` (image d'en-tête,
-  Vercel Blob), `termsText` (conditions d'inscription ; non vide = acceptation obligatoire),
+  Vercel Blob), `attachments` (JSON : documents joints publics `[{url,filename,contentType,size}]`,
+  ex. RIB — §5.5), `termsText` (conditions d'inscription ; non vide = acceptation obligatoire),
   `isPublished` (= « accessible »), `firstPublishedAt?` (1re mise en ligne → statut,
   voir §5.2), `allowEditResponse`, `singleResponse`, `createdAt`, `updatedAt`, relations
   `questions`/`responses`.
@@ -177,16 +199,55 @@ Correspondance desktop : `Question` ↔ `FormQuestionInfo` (id/titre/type/option
 
 ## 4. Authentification & rôles
 
-- **Provider Google uniquement**, sessions **JWT** (`session.strategy = "jwt"`, `trustHost: true`).
-- Identifiants lus automatiquement depuis `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET` ; secret de
-  session `AUTH_SECRET`.
-- **`signIn` callback** (dans `auth.ts`, runtime Node) : **upsert** de l'utilisateur en base.
+- **Deux providers**, sessions **JWT** (`session.strategy = "jwt"`, `maxAge` **30 jours**,
+  `trustHost: true`) — le cookie de session est le « cache » qui évite de ressaisir le mot de passe :
+  - **Google** (OAuth) : identifiants `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`.
+  - **`credentials`** (compte interne) : défini dans `auth.ts` **uniquement** (runtime Node : il
+    touche la base et bcrypt, donc **pas** dans `auth.config.ts` edge). Son `authorize` vérifie
+    l'e-mail + le hash (`verifyPassword`) et **refuse toute adresse non vérifiée** (§4bis).
+- Secret de session `AUTH_SECRET`.
+- **`signIn` callback** (dans `auth.ts`, runtime Node) : **upsert** de l'utilisateur pour Google ;
+  pour `credentials`, l'utilisateur existe déjà (validé par `authorize`) → retour anticipé sans écrire.
 - **`authorized` callback** (dans `auth.config.ts`, edge-safe) : utilisé par le proxy pour la
   redirection.
-- **Admin** : `isAdmin(email)` compare l'e-mail (insensible à la casse) à `ADMIN_EMAILS`.
+- **Admin** : `isAdmin(email)` compare l'e-mail (insensible à la casse) à `ADMIN_EMAILS`, quel que
+  soit le mode de connexion.
 - **URI de redirection OAuth** (à déclarer dans Google Cloud, client « Application Web ») :
   - Local : `http://localhost:3000/api/auth/callback/google`
   - Prod : `https://bad-web-rho.vercel.app/api/auth/callback/google`
+
+---
+
+## 4bis. Comptes internes (e-mail + mot de passe)
+
+Pour les membres **sans adresse Gmail**. Coexiste avec Google ; aucun impact sur la mécanique
+Google Contacts (qui exige toujours qu'un admin soit connecté en Google).
+
+- **Modèle `User` étendu** : `firstName`, `lastName`, `passwordHash` (bcrypt, **jamais** exposé),
+  `provider` (`GOOGLE` / `CREDENTIALS`), `emailVerifiedAt`, `mustChangePassword`.
+- **Mots de passe** (`src/lib/password.ts`) : hachage bcrypt (10 tours), règle minimale 8 caractères,
+  `generateTempPassword()` (sans caractères ambigus). **Irréversible** : personne ne relit un mot de
+  passe ; l'admin ne peut que **réinitialiser**.
+- **Inscription** (`/inscription`, publique) → action `register` (`src/app/actions/auth.ts`) :
+  valide (Zod), refuse un **e-mail déjà pris** (Google ou interne), hache, crée le compte
+  **inactif** (`emailVerifiedAt = null`). La **vérification d'adresse est systématique** : e-mail de
+  confirmation (`sendAccountVerificationEmail`), redirection vers **`/inscription/verification`**
+  (page d'attente + bouton « Renvoyer »). Jeton en table **`AccountVerification`** (7 jours) ; la page
+  publique **`/verifier-compte/[token]`** (`consumeAccountVerification`) pose `emailVerifiedAt`.
+  But : vérifier que l'adresse **existe** et que c'est bien **son titulaire** qui s'inscrit.
+  ⚠️ L'envoi d'e-mails (`GMAIL_*`) est donc un **prérequis** : sans lui, aucun compte interne ne peut
+  être activé (le bouton « Renvoyer » resterait sans effet).
+- **Connexion** (`/connexion`) : bouton Google **et** formulaire e-mail/mot de passe
+  (`CredentialsLoginForm` → action `login`) ; `authorize` **refuse toute adresse non vérifiée**.
+  Lien « Créer un compte ».
+- **Mon compte** (`/compte`, tout connecté) : compte interne → modifier prénom/nom (`updateProfile`)
+  et mot de passe (`changePassword`, ancien requis, lève `mustChangePassword`) ; compte Google →
+  affichage en lecture seule. Actions dans `src/app/actions/account.ts`.
+- **Gestion des comptes** (`/admin/comptes`, admin) : liste (nom, e-mail, type, statut vérifié,
+  date), recherche, **réinitialiser le mot de passe** → mot de passe temporaire **copiable affiché une
+  seule fois** (`resetPasswordForUser`, marque `mustChangePassword`), **supprimer** (interdit sur son
+  propre compte). Actions dans `src/app/actions/adminAccounts.ts`, tableau `AccountsTable`.
+- **Routes publiques** ajoutées au matcher du proxy : `/inscription`, `/verifier-compte`.
 
 ---
 
@@ -197,6 +258,7 @@ Correspondance desktop : `Question` ↔ `FormQuestionInfo` (id/titre/type/option
   avec un **champ de recherche** (composant client `FormsTable`) filtrant par **titre ou libellé**
   (compteur « N sur M »). **+ Créer** → fenêtre proposant un formulaire **vierge** ou la copie d'un
   **modèle** (`CreateFormButton`, liste déroulante des `FormTemplate`).
+  Boutons d'en-tête : **Modèles**, **Comptes** (`/admin/comptes`, §4bis), **+ Créer**.
   Actions en **icônes** (intitulé en infobulle) : **Aperçu** (ouvre `/forms/[id]` dans un nouvel
   onglet, même en brouillon), **Modifier**, **Réponses**, **Dupliquer**, **Lien** (toujours
   copiable ; grisé avec une infobulle d'avertissement tant que le formulaire n'est pas accessible),
@@ -284,6 +346,18 @@ l'image d'en-tête du store Blob (échec silencieux si le store n'est pas config
   passent aussi bien que les bannières panoramiques).
   `next.config.ts` autorise `*.public.blob.vercel-storage.com` dans `images.remotePatterns`
   (rendu en `unoptimized` pour ne pas consommer le quota d'optimisation).
+
+### 5.5 Documents joints (pièces jointes publiques)
+
+- L'admin attache au formulaire des **documents publics** (ex. **RIB**) dans le constructeur, section
+  **« Documents joints »** (`AttachmentsPicker`) : upload **multiple** vers Vercel Blob (chemin
+  `forms/docs/…`), **PDF ou image**, **10 Mo** max. Stockés dans `Form.attachments` (JSON) par
+  `saveForm` ; suivis par la duplication, les modèles, et supprimés du store à la suppression du
+  formulaire (best-effort). Métadonnées et contrôles partagés : `src/lib/attachments.ts`.
+- La route `/api/blob/upload` distingue **document** (préfixe `forms/docs/`, types PDF+image, 10 Mo)
+  et **image d'en-tête** (image seule, 5 Mo) via `onBeforeGenerateToken(pathname)`.
+- **Visibles par tout le monde** : affichés en tête du formulaire (`FillForm`, section
+  « Documents »), téléchargeables par toute personne qui l'ouvre (URL Blob publique).
 
 ---
 
@@ -417,10 +491,15 @@ exactement sur les lignes affichées. Sans `?q=`, toutes les réponses sont expo
 - **Variables d'env de prod** (Vercel) : `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`,
   `DATABASE_URL`, `ADMIN_EMAILS`, **`AUTH_URL`** (épinglée sur l'URL de prod pour fixer le
   `redirect_uri`). `INTEGRATION_API_KEY` pour l'API desktop (§10).
-  **`BLOB_READ_WRITE_TOKEN`** pour les images d'en-tête : store **`bad-web-images`** (accès *public*,
-  région iad1), créé et relié au projet via `vercel blob create-store <nom> --access public --yes`.
+  **`BLOB_READ_WRITE_TOKEN`** pour les images d'en-tête **et les documents joints** (§5.5) : store
+  **`bad-web-images`** (accès *public*, région iad1), créé et relié au projet via
+  `vercel blob create-store <nom> --access public --yes`.
   La variable est ajoutée automatiquement aux 3 environnements ; en local elle est récupérée dans
   **`.env.local`** (fichier ignoré par git, généré par la même commande ou par `vercel env pull`).
+  ⚠️ **`GMAIL_USER` / `GMAIL_APP_PASSWORD`** (+ `MAIL_FROM` facultatif) sont **requis en prod** : la
+  vérification d'adresse des **comptes internes** est systématique (§4bis), donc sans envoi d'e-mails
+  aucun compte interne ne peut être activé. (La connexion **Google** et le reste fonctionnent sans.)
+- **Dépendance** : `bcryptjs` (hachage des mots de passe internes) — installée automatiquement par Vercel.
 - **Déploiement CLI par jeton** (non interactif) :
   `VERCEL_TOKEN=… vercel --prod --yes` (projet `bad12/bad-web`, alias `https://bad-web-rho.vercel.app`).
   Ajouter une variable : `printf '%s' 'valeur' | VERCEL_TOKEN=… vercel env add NOM production`.
