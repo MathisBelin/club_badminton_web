@@ -49,14 +49,24 @@ function getTransporter() {
   return transporter;
 }
 
-async function sendMail(to: string, subject: string, html: string, text: string): Promise<SendResult> {
+type Envelope = { to?: string; bcc?: string[] };
+
+/// Envoi bas niveau : accepte un destinataire visible (`to`) et/ou une liste en
+/// copie cachée (`bcc`), pour envoyer un même message à plusieurs personnes en un seul e-mail.
+async function deliver(
+  envelope: Envelope,
+  subject: string,
+  html: string,
+  text: string,
+): Promise<SendResult> {
   if (!mailerConfigured()) {
     return { ok: false, error: "Envoi d'e-mails non configuré (GMAIL_USER / GMAIL_APP_PASSWORD)." };
   }
   try {
     await getTransporter().sendMail({
       from: process.env.MAIL_FROM || process.env.GMAIL_USER,
-      to,
+      to: envelope.to,
+      bcc: envelope.bcc,
       subject,
       text,
       html,
@@ -65,6 +75,10 @@ async function sendMail(to: string, subject: string, html: string, text: string)
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Échec de l'envoi de l'e-mail." };
   }
+}
+
+async function sendMail(to: string, subject: string, html: string, text: string): Promise<SendResult> {
+  return deliver({ to }, subject, html, text);
 }
 
 function escapeHtml(s: string): string {
@@ -98,29 +112,30 @@ export async function sendAccountVerificationEmail(
   return sendMail(to, subject, html, text);
 }
 
-/// E-mail annonçant à une personne que son inscription au club a été VALIDÉE.
-/// Déclenché par l'application desktop quand l'admin valide la préinscription.
-export async function sendRegistrationConfirmedEmail(
-  to: string,
-  name?: string,
+/// E-mail annonçant que l'inscription au club est VALIDÉE, envoyé en UN SEUL message
+/// à toutes les personnes validées : chacune est en **copie cachée (BCC)** — elles ne
+/// voient pas les adresses des autres. Message générique (pas de prénom, commun à tous).
+/// Déclenché par l'application desktop à la validation d'une (ou plusieurs) préinscription(s).
+export async function sendRegistrationConfirmedBulk(
+  emails: string[],
   formTitle?: string,
 ): Promise<SendResult> {
-  const hello = name && name.trim() ? `Bonjour ${name.trim()},` : "Bonjour,";
   const forWhat = formTitle && formTitle.trim() ? ` à « ${formTitle.trim()} »` : "";
   const subject = "Votre inscription est validée ✅";
   const text =
-    `${hello}\n\n` +
+    `Bonjour,\n\n` +
     `Bonne nouvelle : votre inscription${forWhat} a bien été validée par le club.\n\n` +
     `À bientôt sur les courts !\nLe club de badminton`;
   const html = `
     <div style="font-family:system-ui,sans-serif;color:#18181b;line-height:1.5">
-      <p>${escapeHtml(hello)}</p>
+      <p>Bonjour,</p>
       <p>Bonne nouvelle : votre inscription${escapeHtml(forWhat)} a bien été
          <strong>validée</strong> par le club.</p>
       <p style="color:#059669;font-weight:600">À bientôt sur les courts !</p>
       <p style="font-size:13px;color:#71717a">Le club de badminton</p>
     </div>`;
-  return sendMail(to, subject, html, text);
+  // Le club en destinataire visible ; toutes les personnes validées en copie cachée.
+  return deliver({ to: process.env.GMAIL_USER, bcc: emails }, subject, html, text);
 }
 
 /// E-mail de confirmation d'adresse envoyé après l'envoi d'un formulaire.

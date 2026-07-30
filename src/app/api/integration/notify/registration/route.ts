@@ -1,11 +1,11 @@
 import { guardIntegration } from "@/lib/integration";
-import { sendRegistrationConfirmedEmail } from "@/lib/mailer";
+import { sendRegistrationConfirmedBulk } from "@/lib/mailer";
 
 // Notification d'inscription validée, déclenchée par l'application desktop lorsqu'un
-// admin valide une (ou plusieurs) préinscription(s). Envoie un e-mail « inscription
-// validée » à chaque destinataire, via le Gmail du club (SMTP, cf. mailer).
+// admin valide une (ou plusieurs) préinscription(s). Envoie UN SEUL e-mail « inscription
+// validée » à toutes les personnes en copie cachée (BCC), via le Gmail du club.
 //   POST /api/integration/notify/registration
-//   body : { recipients: [{ email, name? }], formTitle? }
+//   body : { recipients: [{ email, name? }], formTitle? }  (le champ name est ignoré : message commun)
 type Recipient = { email?: string; name?: string };
 
 export async function POST(request: Request) {
@@ -29,13 +29,10 @@ export async function POST(request: Request) {
 
   const formTitle = typeof body.formTitle === "string" ? body.formTitle : undefined;
 
-  let sent = 0;
-  const errors: string[] = [];
-  for (const r of recipients) {
-    const res = await sendRegistrationConfirmedEmail(r.email, r.name, formTitle);
-    if (res.ok) sent += 1;
-    else errors.push(`${r.email} : ${res.error}`);
-  }
+  // Un seul e-mail, toutes les adresses en copie cachée (dédoublonnées).
+  const emails = [...new Set(recipients.map((r) => r.email.trim().toLowerCase()))];
+  const res = await sendRegistrationConfirmedBulk(emails, formTitle);
 
-  return Response.json({ sent, failed: recipients.length - sent, errors });
+  if (res.ok) return Response.json({ sent: emails.length, failed: 0, errors: [] });
+  return Response.json({ sent: 0, failed: emails.length, errors: [res.error] });
 }
