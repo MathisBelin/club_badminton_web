@@ -98,6 +98,31 @@ export async function sendAccountVerificationEmail(
   return sendMail(to, subject, html, text);
 }
 
+/// E-mail annonçant à une personne que son inscription au club a été VALIDÉE.
+/// Déclenché par l'application desktop quand l'admin valide la préinscription.
+export async function sendRegistrationConfirmedEmail(
+  to: string,
+  name?: string,
+  formTitle?: string,
+): Promise<SendResult> {
+  const hello = name && name.trim() ? `Bonjour ${name.trim()},` : "Bonjour,";
+  const forWhat = formTitle && formTitle.trim() ? ` à « ${formTitle.trim()} »` : "";
+  const subject = "Votre inscription est validée ✅";
+  const text =
+    `${hello}\n\n` +
+    `Bonne nouvelle : votre inscription${forWhat} a bien été validée par le club.\n\n` +
+    `À bientôt sur les courts !\nLe club de badminton`;
+  const html = `
+    <div style="font-family:system-ui,sans-serif;color:#18181b;line-height:1.5">
+      <p>${escapeHtml(hello)}</p>
+      <p>Bonne nouvelle : votre inscription${escapeHtml(forWhat)} a bien été
+         <strong>validée</strong> par le club.</p>
+      <p style="color:#059669;font-weight:600">À bientôt sur les courts !</p>
+      <p style="font-size:13px;color:#71717a">Le club de badminton</p>
+    </div>`;
+  return sendMail(to, subject, html, text);
+}
+
 /// E-mail de confirmation d'adresse envoyé après l'envoi d'un formulaire.
 export async function sendVerificationEmail(
   to: string,
