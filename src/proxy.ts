@@ -14,6 +14,6 @@ export const config = {
   // assets Next, favicon.
   // `api/integration` est authentifiée par clé d'API (x-api-key), pas par session.
   matcher: [
-    "/((?!api/auth|api/blob|api/integration|connexion|inscription|ouvrir|verifier|verifier-compte|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api/auth|api/blob|api/integration|connexion|inscription|ouvrir|ouvrir-mail|verifier|verifier-compte|_next/static|_next/image|favicon.ico).*)",
   ],
 };
