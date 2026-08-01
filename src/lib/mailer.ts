@@ -112,14 +112,19 @@ export async function sendAccountVerificationEmail(
   return sendMail(to, subject, html, text);
 }
 
-/// E-mail annonçant que l'inscription au club est VALIDÉE, envoyé en UN SEUL message
-/// à toutes les personnes validées : chacune est en **copie cachée (BCC)** — elles ne
-/// voient pas les adresses des autres. Message générique (pas de prénom, commun à tous).
-/// Déclenché par l'application desktop à la validation d'une (ou plusieurs) préinscription(s).
-export async function sendRegistrationConfirmedBulk(
+/// E-mail annonçant que l'inscription au club est VALIDÉE.
+/// Envoyé en **un message INDIVIDUEL par personne** (destinataire = elle-même) :
+///   - message correctement adressé → bonne délivrabilité, et surtout PAS de rejet Gmail
+///     « 550 5.7.1 rejected per SPAM policy » (déclenché par un envoi sans destinataire
+///     visible, comme un BCC seul) ;
+///   - AUCUNE copie au club (l'adresse d'envoi ne se reçoit pas le message à elle-même) ;
+///   - les personnes ne voient pas les adresses des autres (un destinataire par e-mail).
+/// Message générique (pas de prénom, commun à tous). Déclenché par l'application desktop
+/// à la validation d'une (ou plusieurs) préinscription(s).
+export async function sendRegistrationConfirmed(
   emails: string[],
   formTitle?: string,
-): Promise<SendResult> {
+): Promise<{ sent: number; failed: number; errors: string[] }> {
   const forWhat = formTitle && formTitle.trim() ? ` à « ${formTitle.trim()} »` : "";
   const subject = "Votre inscription est validée ✅";
   const text =
@@ -134,9 +139,27 @@ export async function sendRegistrationConfirmedBulk(
       <p style="color:#059669;font-weight:600">À bientôt sur les courts !</p>
       <p style="font-size:13px;color:#71717a">Le club de badminton</p>
     </div>`;
-  // Toutes les personnes validées en copie cachée, SANS copie au club : l'adresse
-  // d'envoi (celle qui valide) ne se reçoit pas inutilement le message à elle-même.
-  return deliver({ bcc: emails }, subject, html, text);
+
+  if (!mailerConfigured()) {
+    return {
+      sent: 0,
+      failed: emails.length,
+      errors: ["Envoi d'e-mails non configuré (GMAIL_USER / GMAIL_APP_PASSWORD)."],
+    };
+  }
+
+  let sent = 0;
+  let failed = 0;
+  const errors: string[] = [];
+  for (const email of emails) {
+    const result = await sendMail(email, subject, html, text);
+    if (result.ok) sent++;
+    else {
+      failed++;
+      errors.push(`${email} : ${result.error}`);
+    }
+  }
+  return { sent, failed, errors };
 }
 
 /// E-mail de confirmation d'adresse envoyé après l'envoi d'un formulaire.
