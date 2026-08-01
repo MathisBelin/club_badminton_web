@@ -11,9 +11,12 @@ import OpenExternal from "@/components/OpenExternal";
 //   email = adresse expéditrice (compte connecté à l'appli) ; to / su / body = brouillon.
 //   go=1  = étape de RETOUR après la connexion Google → on ouvre Gmail.
 
-/// Construit l'URL de composition Gmail ciblant le compte <email> (/mail/u/<email>/).
+/// Construit l'URL de composition Gmail ciblant le compte <email>.
+/// On utilise `authuser=<email>` (et non `/u/<index>/`) : c'est le sélecteur de compte
+/// par ADRESSE dans un navigateur connecté à plusieurs comptes. Le segment `/u/<email>/`
+/// n'est pas fiable (Gmail retombe sur le compte par défaut), d'où l'ouverture du mauvais compte.
 function gmailComposeUrl(email: string, to?: string, su?: string, body?: string): string {
-  const base = `https://mail.google.com/mail/u/${encodeURIComponent(email)}/?view=cm&fs=1`;
+  const base = `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(email)}&view=cm&fs=1`;
   const parts: string[] = [];
   if (to) parts.push(`to=${encodeURIComponent(to)}`);
   if (su) parts.push(`su=${encodeURIComponent(su)}`);
