@@ -36,7 +36,15 @@ export default async function InscriptionVerificationPage({
           </p>
         )}
 
-        {email && <ResendAccountVerification email={email} />}
+        {email && (
+          <>
+            <p className="mt-4 text-sm text-zinc-500">
+              Vous ne voyez pas l&apos;e-mail ? Vérifiez vos courriers indésirables (spam), ou
+              renvoyez-le :
+            </p>
+            <ResendAccountVerification email={email} />
+          </>
+        )}
 
         <p className="mt-6 text-sm">
           <Link href="/connexion" className="font-medium text-emerald-700 hover:underline">

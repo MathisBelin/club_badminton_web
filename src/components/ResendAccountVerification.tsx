@@ -12,11 +12,12 @@ export default function ResendAccountVerification({ email }: { email: string }) 
       <input type="hidden" name="email" value={email} />
       <button
         type="submit"
-        disabled={pending || state?.ok}
+        disabled={pending}
         className="rounded-lg border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100 disabled:opacity-60"
       >
-        {pending ? "Envoi…" : state?.ok ? "E-mail renvoyé" : "Renvoyer l'e-mail de confirmation"}
+        {pending ? "Envoi…" : "Renvoyer l'e-mail de confirmation"}
       </button>
+      {state?.ok && <p className="mt-2 text-sm text-emerald-600">E-mail renvoyé.</p>}
       {state?.error && <p className="mt-2 text-sm text-red-600">{state.error}</p>}
     </form>
   );
