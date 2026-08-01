@@ -134,8 +134,9 @@ export async function sendRegistrationConfirmedBulk(
       <p style="color:#059669;font-weight:600">À bientôt sur les courts !</p>
       <p style="font-size:13px;color:#71717a">Le club de badminton</p>
     </div>`;
-  // Le club en destinataire visible ; toutes les personnes validées en copie cachée.
-  return deliver({ to: process.env.GMAIL_USER, bcc: emails }, subject, html, text);
+  // Toutes les personnes validées en copie cachée, SANS copie au club : l'adresse
+  // d'envoi (celle qui valide) ne se reçoit pas inutilement le message à elle-même.
+  return deliver({ bcc: emails }, subject, html, text);
 }
 
 /// E-mail de confirmation d'adresse envoyé après l'envoi d'un formulaire.
