@@ -7,7 +7,8 @@ membres sans adresse Gmail). Deux rôles :
 - **Admin** (liste d'e-mails en config) : créer des formulaires (vierges, depuis un **modèle** ou
   par duplication), les rendre accessibles ou non, consulter les répondants, la **liste d'attente**
   et les réponses, exporter en CSV.
-- **Utilisateur** : remplir les formulaires reçus **par lien** (ils ne sont pas listés sur l'accueil).
+- **Utilisateur** : remplir les formulaires **accessibles**, retrouvés **listés sur l'accueil**
+  (recherche par nom) ou via le **lien de partage**.
 
 Fonctions notables : **comptes internes** (inscription avec vérification d'e-mail systématique,
 « Mon compte », gestion des comptes admin avec mot de passe temporaire), **documents joints** publics au formulaire
@@ -19,7 +20,7 @@ saisie** (e-mail / téléphone / entier / décimal) avec **vérification d'adres
 ## Pile
 
 - **Next.js 16** (App Router, TypeScript, React) + **Tailwind CSS**
-- **Auth.js (NextAuth v5)** — provider Google, sessions JWT
+- **Auth.js (NextAuth v5)** — providers Google + compte interne (credentials, bcrypt), sessions JWT
 - **Prisma** + **PostgreSQL** (Neon en production)
 - **react-select** — listes déroulantes (composant `src/components/Select.tsx`)
 
@@ -51,8 +52,10 @@ saisie** (e-mail / téléphone / entier / décimal) avec **vérification d'adres
    MAIL_FROM=Club de badminton <…@gmail.com>
    INTEGRATION_API_KEY=…    # clé lue par l'app desktop (en-tête x-api-key)
    ```
-   Les trois dernières familles sont facultatives en local : sans elles, seules la vérification
-   d'adresse et l'API d'intégration sont indisponibles.
+   En local, `BLOB_READ_WRITE_TOKEN` et `INTEGRATION_API_KEY` sont facultatifs (images/documents et
+   API desktop indisponibles sans eux). Les `GMAIL_*` sont **nécessaires** dès qu'on veut créer un
+   **compte interne** (vérification d'e-mail obligatoire), vérifier une adresse de réponse, ou envoyer
+   les e-mails de validation d'inscription.
 
 5. **Créer les tables**
    ```bash
@@ -63,7 +66,7 @@ saisie** (e-mail / téléphone / entier / décimal) avec **vérification d'adres
    ```bash
    npm run dev
    ```
-   Ouvrir http://localhost:3000 → redirection vers la connexion Google.
+   Ouvrir http://localhost:3000 → redirection vers la page de connexion (Google ou compte interne).
 
 ## Vérification rapide
 
@@ -92,22 +95,25 @@ prisma/schema.prisma          Modèle de données (User, Form, Question, Respons
 src/auth.config.ts            Config Auth.js edge-safe (proxy)
 src/auth.ts                   Instance complète Auth.js (+ persistance User)
 src/proxy.ts                  Protection des routes (redirige vers /connexion)
-src/lib/{prisma,admin,session,questions}.ts   Utilitaires (client DB, rôle, gardes, types de questions)
-src/app/actions/{forms,responses}.ts          Server Actions (CRUD formulaires, soumission)
-src/app/connexion             Page de connexion Google
-src/app/page.tsx              Accueil (accès par lien pour les utilisateurs)
-src/app/admin/…               Tableau de bord, modèles, constructeur, réponses, liste d'attente (+ CSV)
+src/lib/{prisma,admin,session,questions,password,attachments,mailer…}.ts   Utilitaires (DB, rôle, gardes, types, mots de passe, pièces jointes, e-mails…)
+src/app/actions/{forms,responses,auth,account,adminAccounts}.ts  Server Actions (formulaires, soumission, comptes)
+src/app/{connexion,inscription,compte}          Connexion (Google + interne), inscription, « Mon compte »
+src/app/page.tsx              Accueil (liste des formulaires accessibles + recherche)
+src/app/admin/…               Tableau de bord, modèles, constructeur, réponses, liste d'attente, comptes (+ CSV)
 src/app/forms/[id]/…          Remplissage, confirmation, suivi des adresses à vérifier
-src/app/verifier/[token]/…    Page publique de vérification d'adresse
-src/app/api/integration/…     API lecture seule pour l'app desktop
-src/components/…              AppHeader, FormBuilder, FillForm, icônes, boutons d'action
+src/app/{verifier,verifier-compte}/[token]/…    Pages publiques de vérification (adresse de réponse / compte)
+src/app/api/integration/…     API pour l'app desktop (lecture + 2 écritures + notification e-mail)
+src/components/…              AppHeader, FormBuilder, FillForm, AttachmentsPicker, formulaires de compte…
 ```
 
 ## API d'intégration (app desktop)
 
-Lecture seule, en-tête `x-api-key` = `INTEGRATION_API_KEY` :
+En-tête `x-api-key` = `INTEGRATION_API_KEY`. **Lecture** :
 `GET /api/integration/forms?owner=<e-mail>`, `…/forms/[id]/questions`, `…/forms/[id]/responses`.
-C'est la source des **formulaires d'inscription** de l'application desktop, à la place de Google Forms.
+**Écritures** : `PATCH`/`DELETE …/forms/[id]/responses/[responseId]` (corriger / supprimer une
+préinscription). **Notification** : `POST /api/integration/notify/registration` (e-mail « inscription
+validée » groupé en BCC). C'est la source des **formulaires d'inscription** de l'app desktop, à la
+place de Google Forms. Détails : `docs/DOCUMENTATION.md` §10.
 
 ## À venir (hors MVP)
 

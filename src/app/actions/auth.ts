@@ -68,25 +68,33 @@ export async function register(
     return { message: "Les deux mots de passe ne correspondent pas." };
   }
 
-  // Unicité de l'adresse : aucun autre compte (Google ou interne) ne doit l'utiliser.
+  // Unicité de l'adresse — mais un compte interne NON vérifié n'est « techniquement pas
+  // inscrit » : tant que son adresse n'est pas confirmée, il ne doit pas bloquer une nouvelle
+  // inscription. On bloque donc uniquement si l'adresse est réellement prise :
+  //   - un compte Google (jamais « non vérifié ») ;
+  //   - un compte interne déjà VÉRIFIÉ.
+  // Un compte interne non vérifié est simplement RÉÉCRIT (nom / mot de passe) et sa
+  // vérification est relancée : la 1re inscription non aboutie n'emprisonne pas l'adresse.
   const existing = await prisma.user.findUnique({ where: { email } });
-  if (existing) {
+  if (existing && (existing.provider !== "CREDENTIALS" || existing.emailVerifiedAt)) {
     return { errors: { email: "Un compte existe déjà avec cette adresse." } };
   }
 
-  const user = await prisma.user.create({
-    data: {
-      email,
-      firstName,
-      lastName,
-      name: `${firstName} ${lastName}`,
-      passwordHash: await hashPassword(password),
-      provider: "CREDENTIALS",
-      // L'adresse doit TOUJOURS être confirmée : le compte reste inactif jusque-là.
-      // But : vérifier que l'adresse existe et que c'est bien son titulaire qui s'inscrit.
-      emailVerifiedAt: null,
-    },
-  });
+  const passwordHash = await hashPassword(password);
+  const data = {
+    email,
+    firstName,
+    lastName,
+    name: `${firstName} ${lastName}`,
+    passwordHash,
+    provider: "CREDENTIALS" as const,
+    // L'adresse doit TOUJOURS être confirmée : le compte reste inactif jusque-là.
+    // But : vérifier que l'adresse existe et que c'est bien son titulaire qui s'inscrit.
+    emailVerifiedAt: null,
+  };
+  const user = existing
+    ? await prisma.user.update({ where: { id: existing.id }, data })
+    : await prisma.user.create({ data });
 
   // On envoie l'e-mail de confirmation et on renvoie vers la page d'attente
   // (aucune connexion tant que l'adresse n'est pas confirmée).
@@ -96,6 +104,9 @@ export async function register(
 }
 
 export type ResendState = { ok?: boolean; error?: string } | undefined;
+
+// Délai minimal entre deux envois d'un même e-mail de confirmation (anti-spam).
+const RESEND_COOLDOWN_MS = 60_000;
 
 /// Renvoie l'e-mail de confirmation de compte (page d'attente d'inscription).
 /// Réponse volontairement neutre : ne révèle pas si l'adresse correspond à un compte.
@@ -110,6 +121,18 @@ export async function resendAccountVerification(
   // Compte inexistant, déjà vérifié ou compte Google : on ne renvoie rien mais on
   // répond « ok » pour ne pas divulguer l'existence du compte.
   if (!user || user.provider !== "CREDENTIALS" || user.emailVerifiedAt) {
+    return { ok: true };
+  }
+
+  // Anti-spam : si un e-mail vient d'être envoyé (création du compte ou renvoi
+  // précédent), on n'en renvoie pas un autre. On répond quand même « ok » pour
+  // rester neutre et ne pas révéler l'état du compte : le lien précédent reste valable.
+  const last = await prisma.accountVerification.findFirst({
+    where: { userId: user.id, verifiedAt: null },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
+  if (last && Date.now() - last.createdAt.getTime() < RESEND_COOLDOWN_MS) {
     return { ok: true };
   }
 

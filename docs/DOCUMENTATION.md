@@ -47,8 +47,9 @@ interne** (e-mail + mot de passe, pour les membres sans adresse Gmail). Interfac
 
 ### 2.2 Organisation du code
 ```
-prisma/schema.prisma          Modèle de données (User, Form, Question, Response, Answer,
-                              EmailVerification, FormTemplate) + enums QuestionType / QuestionFormat / ContactField
+prisma/schema.prisma          Modèle de données (User, AccountVerification, Form, Question, Response,
+                              Answer, EmailVerification, FormTemplate, GoogleAccount, ClubLabel…)
+                              + enums QuestionType / QuestionFormat / ContactField / AccountProvider
 prisma/migrations/            Migrations générées
 
 src/auth.config.ts            Config Auth.js « edge-safe » : provider Google + provider `google-contacts`
@@ -77,6 +78,7 @@ src/app/loading.tsx           Écran d'attente par défaut (toute navigation) �
                               admin/loading.tsx et forms/[id]/loading.tsx (cadre conservé)
 src/app/globals.css           Tailwind + thème CLAIR forcé (color-scheme: light)
 src/app/connexion/page.tsx    Page de connexion Google (publique)
+src/app/ouvrir/page.tsx       Entrée publique depuis le desktop (?email=…) : connecte le bon compte (login_hint Google)
 src/app/page.tsx              Accueil : liste des formulaires accessibles + recherche par nom (users),
                               raccourci vers les formulaires accessibles (admin)
 
@@ -131,8 +133,18 @@ src/components/PageLoader.tsx  Écran d'attente commun aux fichiers loading.tsx
 
 ### 2.3 Navigation & protection
 - **`src/proxy.ts`** (convention Next 16, remplace `middleware.ts`) applique Auth.js à toutes les
-  routes **sauf** `api/auth`, `api/blob`, `api/integration`, `/connexion`, `/verifier/*` et les assets. Le callback `authorized` autorise
+  routes **sauf** `api/auth`, `api/blob`, `api/integration`, `/connexion`, `/inscription`, `/ouvrir`,
+  `/verifier/*`, `/verifier-compte/*` et les assets. Le callback `authorized` autorise
   uniquement les utilisateurs connectés → sinon redirection vers `/connexion`.
+
+- **`/ouvrir`** (publique) : point d'entrée ouvert **depuis l'application desktop** (bouton
+  « Ouvrir l'application web »). Le desktop y passe l'e-mail du compte Google auquel il est connecté
+  (`?email=…`, + `callbackUrl` interne facultatif). Si la session en cours correspond déjà à ce
+  compte → entrée directe (`redirect`) ; sinon un bouton lance la connexion Google en
+  **présélectionnant** ce compte (paramètre d'autorisation `login_hint`). La bascule n'est **jamais
+  automatique** quand une autre session est ouverte : la page propose explicitement de continuer avec
+  le compte demandé ou de rester sur la session courante (anti-redirection ouverte : `callbackUrl`
+  doit être un chemin interne).
 - **Chargement des pages**, deux niveaux complémentaires :
   1. **`NavigationProgress`** (client, monté dans le layout racine) : barre verte en haut de
      l'écran **dès le clic**, sans attendre le serveur. Elle écoute les clics sur les liens
@@ -229,7 +241,11 @@ Google Contacts (qui exige toujours qu'un admin soit connecté en Google).
   `generateTempPassword()` (sans caractères ambigus). **Irréversible** : personne ne relit un mot de
   passe ; l'admin ne peut que **réinitialiser**.
 - **Inscription** (`/inscription`, publique) → action `register` (`src/app/actions/auth.ts`) :
-  valide (Zod), refuse un **e-mail déjà pris** (Google ou interne), hache, crée le compte
+  valide (Zod), refuse un **e-mail déjà pris** — mais **seulement** s'il est réellement pris : un
+  compte **Google**, ou un compte interne **déjà vérifié**. Un compte interne **non vérifié** n'est
+  « techniquement pas inscrit » : il **ne bloque pas** une nouvelle inscription ; ses infos (nom /
+  mot de passe) sont **réécrites** et la vérification relancée (la 1re inscription non aboutie
+  n'emprisonne pas l'adresse). Hache, crée (ou met à jour) le compte
   **inactif** (`emailVerifiedAt = null`). La **vérification d'adresse est systématique** : e-mail de
   confirmation (`sendAccountVerificationEmail`), redirection vers **`/inscription/verification`**
   (page d'attente + bouton « Renvoyer »). Jeton en table **`AccountVerification`** (7 jours) ; la page
@@ -423,11 +439,13 @@ l'image d'en-tête du store Blob (échec silencieux si le store n'est pas config
      qu'il reste **une dernière étape** avant la prise en compte, nomme l'expéditeur
      (`senderAddress()`, soit `GMAIL_USER`) et propose un bouton **« Renvoyer l'e-mail de
      confirmation »** par adresse (`resendVerification`).
-  3. Le lien pointe vers **`/verifier/[token]`** — page **publique** (exclue du matcher du proxy,
-     le jeton aléatoire de 32 octets faisant preuve) : elle horodate `verifiedAt` puis **redirige
-     vers `/forms/[id]/merci`** (« réponse enregistrée »). Elle n'affiche une page que pour les
-     liens expirés ou inconnus. ⚠️ `/merci` étant protégé, un répondant non connecté sur ce
-     navigateur passera par `/connexion` avant de voir la confirmation.
+  3. Le lien pointe vers **`/verifier/[token]`** — page **publique et autonome** (exclue du matcher
+     du proxy, le jeton aléatoire de 32 octets faisant preuve) : elle horodate `verifiedAt` puis
+     **affiche sur place** une confirmation « Adresse confirmée » (avec un lien vers l'accueil), de
+     même que les pages « lien expiré » / « lien inconnu ». Elle ne **redirige jamais** vers une
+     page protégée (ex. `/merci`) : le lien est le plus souvent ouvert depuis une **autre session
+     Gmail** que celle éventuellement connectée dans le navigateur ; une redirection ferait atterrir
+     la personne dans la **mauvaise session**.
   4. Le **tableau des réponses** (admin) affiche chaque adresse avec l'état *vérifiée* / *en attente*.
 
 #### Règles de `syncVerifications` (envoi unique)
@@ -440,7 +458,8 @@ reçu un e-mail de confirmation **dans les 7 derniers jours** et n'ayant pas enc
   passé** (n'importe quelle réponse, même annulée) est marquée `verifiedAt` **d'office**, sans e-mail ;
 - une adresse **déjà présente dans la liste** ne redéclenche **aucun** e-mail, même si la réponse
   est modifiée plusieurs fois : seul le bouton **« Renvoyer »** relance un envoi, ce qui régénère
-  le jeton et **repart pour 7 jours** ;
+  le jeton et **repart pour 7 jours**. Un renvoi est **refusé s'il intervient moins de 60 s** après
+  l'envoi précédent (anti-spam) — même garde-fou sur la vérification des **comptes internes** (§4bis) ;
 - une adresse **vérifiée** sort de la liste (elle reste en base, horodatée) ;
 - une demande **périmée** (7 jours sans réponse) ou portant sur une adresse **retirée** de la
   réponse est supprimée — un envoi ultérieur repartira donc de zéro pour cette adresse.
@@ -459,7 +478,8 @@ reçu un e-mail de confirmation **dans les 7 derniers jours** et n'ayant pas enc
 - **`CopyLinkButton`** (liste admin) et **`ShareLinkBar`** (constructeur) construisent l'URL absolue
   **côté navigateur** (`window.location.origin` + `/forms/[id]`) → fonctionne en local comme en prod
   sans connaître l'hôte côté serveur.
-- Sémantique : **toute personne disposant du lien peut répondre**, connexion Google requise. Si le
+- Sémantique : **toute personne disposant du lien peut répondre**, connexion requise (Google ou compte
+  interne). Si le
   formulaire repasse en brouillon, le lien renvoie « introuvable ».
 - **Accès par lien OU par la liste d'accueil** : l'accueil **liste** tous les formulaires
   **accessibles** (`isPublished`, tous propriétaires confondus) pour **tout le monde** — utilisateurs

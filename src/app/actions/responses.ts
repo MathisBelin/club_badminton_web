@@ -33,6 +33,9 @@ export type SubmitResult = { ok: true } | { ok: false; error: string };
 // Durée de validité d'un lien de vérification d'adresse.
 const VERIFICATION_DAYS = 7;
 
+// Délai minimal entre deux envois d'un même e-mail de confirmation (anti-spam).
+const RESEND_COOLDOWN_MS = 60_000;
+
 /// Enregistre (ou met à jour) la réponse de l'utilisateur connecté à un formulaire publié.
 export async function submitResponse(input: SubmitInput): Promise<SubmitResult> {
   const user = await requireUser();
@@ -304,6 +307,14 @@ export async function resendVerification(
   ).find((v) => v.email.toLowerCase() === email.trim().toLowerCase());
   if (!verification) return { ok: false, error: "Adresse inconnue pour cette réponse." };
   if (verification.verifiedAt) return { ok: true }; // déjà confirmée
+
+  // Anti-spam : refuse un renvoi trop rapproché du précédent (ou de l'envoi initial).
+  if (Date.now() - verification.createdAt.getTime() < RESEND_COOLDOWN_MS) {
+    return {
+      ok: false,
+      error: "Un e-mail vient d'être envoyé. Patientez une minute avant de réessayer.",
+    };
+  }
 
   const updated = await prisma.emailVerification.update({
     where: { id: verification.id },

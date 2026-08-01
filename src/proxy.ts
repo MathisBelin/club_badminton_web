@@ -10,9 +10,10 @@ export const config = {
   // doit répondre en JSON plutôt qu'en redirection), pages de connexion et
   // d'inscription (compte interne), page de vérification d'adresse e-mail et de
   // compte (ouvertes depuis la messagerie, le jeton fait office de preuve),
+  // page d'ouverture depuis le desktop (`/ouvrir`, gère elle-même la connexion),
   // assets Next, favicon.
   // `api/integration` est authentifiée par clé d'API (x-api-key), pas par session.
   matcher: [
-    "/((?!api/auth|api/blob|api/integration|connexion|inscription|verifier|verifier-compte|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api/auth|api/blob|api/integration|connexion|inscription|ouvrir|verifier|verifier-compte|_next/static|_next/image|favicon.ico).*)",
   ],
 };
