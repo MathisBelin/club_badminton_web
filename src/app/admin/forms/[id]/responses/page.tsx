@@ -5,6 +5,7 @@ import { requireAdmin } from "@/lib/session";
 import { MULTI_SEP, contactFieldLabel, isQuestion } from "@/lib/questions";
 import { matchesResponse, searchableQuestionIds } from "@/lib/responseFilter";
 import ResponsesFilter, { SearchPendingProvider, SearchResults } from "@/components/ResponsesFilter";
+import EditResponseButton from "@/components/EditResponseButton";
 
 // Cellule d'une question « adresse à vérifier » : chaque adresse porte son état de confirmation.
 function EmailCell({ value, verified }: { value: string; verified: Set<string> }) {
@@ -142,6 +143,7 @@ export default async function ResponsesPage({
                     )}
                   </th>
                 ))}
+                <th className="px-4 py-3 font-medium">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
@@ -166,6 +168,18 @@ export default async function ResponsesPage({
                         )}
                       </td>
                     ))}
+                    <td className="px-4 py-3">
+                      <EditResponseButton
+                        formId={form.id}
+                        responseId={response.id}
+                        respondentName={response.respondentName ?? response.respondentEmail}
+                        fields={questions.map((q) => ({
+                          questionId: q.id,
+                          title: q.title,
+                          value: byQuestion.get(q.id) ?? "",
+                        }))}
+                      />
+                    </td>
                   </tr>
                 );
               })}

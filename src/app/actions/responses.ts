@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser } from "@/lib/session";
+import { requireUser, requireAdmin } from "@/lib/session";
 import { MULTI_SEP, isQuestion } from "@/lib/questions";
 import { checkAnswer, emailsOf } from "@/lib/formats";
 import { sendVerificationEmail } from "@/lib/mailer";
@@ -335,6 +335,75 @@ export async function resendVerification(
   if (!result.ok) return { ok: false, error: result.error };
 
   revalidatePath(`/forms/${formId}/verification`);
+  return { ok: true };
+}
+
+const editAnswersSchema = z.object({
+  formId: z.string().min(1),
+  responseId: z.string().min(1),
+  answers: z
+    .array(
+      z.object({
+        questionId: z.string().min(1),
+        value: z.string().default(""),
+      }),
+    )
+    .default([]),
+});
+
+export type EditAnswersInput = z.input<typeof editAnswersSchema>;
+
+/// Correction, par un admin, de la saisie d'un répondant (ex. faute de frappe) depuis la
+/// page des réponses. N'écrit que les valeurs des questions du formulaire ; ne renvoie
+/// aucun e-mail et ne modifie ni la date d'envoi ni l'état de liste d'attente (même
+/// comportement que la correction déclenchée par l'application desktop).
+export async function updateResponseAnswers(
+  input: EditAnswersInput,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireAdmin();
+  const data = editAnswersSchema.parse(input);
+
+  const form = await prisma.form.findUnique({
+    where: { id: data.formId },
+    select: { id: true, ownerEmail: true, questions: { select: { id: true } } },
+  });
+  if (!form || form.ownerEmail.toLowerCase() !== user.email.toLowerCase()) {
+    return { ok: false, error: "Formulaire introuvable." };
+  }
+
+  const response = await prisma.response.findUnique({
+    where: { id: data.responseId },
+    select: { id: true, formId: true },
+  });
+  if (!response || response.formId !== form.id) {
+    return { ok: false, error: "Réponse introuvable." };
+  }
+
+  // On n'écrit que des réponses à des questions de CE formulaire.
+  const known = new Set(form.questions.map((q) => q.id));
+  const toWrite = data.answers.filter((a) => known.has(a.questionId));
+  if (toWrite.length === 0) return { ok: false, error: "Aucune réponse à modifier." };
+
+  // Answer n'a pas de clé composée : on retrouve la ligne existante avant d'écrire,
+  // pour la mettre à jour au lieu d'en créer une seconde.
+  const existing = await prisma.answer.findMany({
+    where: { responseId: response.id, questionId: { in: toWrite.map((a) => a.questionId) } },
+    select: { id: true, questionId: true },
+  });
+  const byQuestion = new Map(existing.map((a) => [a.questionId, a.id]));
+
+  await prisma.$transaction(
+    toWrite.map((a) => {
+      const existingId = byQuestion.get(a.questionId);
+      return existingId
+        ? prisma.answer.update({ where: { id: existingId }, data: { value: a.value } })
+        : prisma.answer.create({
+            data: { responseId: response.id, questionId: a.questionId, value: a.value },
+          });
+    }),
+  );
+
+  revalidatePath(`/admin/forms/${form.id}/responses`);
   return { ok: true };
 }
 

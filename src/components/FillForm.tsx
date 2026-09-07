@@ -23,6 +23,25 @@ type Question = {
 
 const CHECKBOX_SEP = MULTI_SEP;
 
+// Clavier / mode de saisie adapté au format d'une question libre : nombre entier ou
+// décimal → pavé numérique, téléphone → clavier téléphone, e-mail → clavier e-mail.
+function formatInputMode(
+  format: QuestionFormat | null,
+): "numeric" | "decimal" | "tel" | "email" | undefined {
+  switch (format) {
+    case "INTEGER":
+      return "numeric";
+    case "DECIMAL":
+      return "decimal";
+    case "PHONE":
+      return "tel";
+    case "EMAIL":
+      return "email";
+    default:
+      return undefined;
+  }
+}
+
 export default function FillForm({
   formId,
   title,
@@ -30,6 +49,7 @@ export default function FillForm({
   headerImageUrl,
   attachments,
   respondentEmail,
+  preview = false,
   locked,
   alreadyAnswered,
   termsText,
@@ -43,6 +63,8 @@ export default function FillForm({
   headerImageUrl: string | null;
   attachments: Attachment[];
   respondentEmail: string;
+  // Aperçu admin d'un formulaire non accessible : envoi désactivé, aucune réponse enregistrée.
+  preview?: boolean;
   alreadyAnswered: boolean;
   locked: boolean;
   termsText: string;
@@ -86,6 +108,8 @@ export default function FillForm({
   const answerable = questions.filter((q) => isQuestion(q.type));
 
   function submit() {
+    // En aperçu, aucun envoi possible : le bouton est de toute façon désactivé.
+    if (preview) return;
     setError(null);
     setSubmitted(true);
     for (const q of answerable) {
@@ -256,12 +280,17 @@ export default function FillForm({
 
       {!locked && answerable.length > 0 && (
         <div className="flex flex-wrap items-center justify-end gap-3">
+          {/* Aperçu : l'envoi est désactivé (aucune réponse n'est enregistrée). */}
+          {preview && (
+            <span className="text-sm text-zinc-500">Aperçu — l&apos;envoi est désactivé.</span>
+          )}
           {/* Modification d'une réponse existante : possibilité de se désinscrire. */}
-          {alreadyAnswered && <CancelResponseButton formId={formId} />}
+          {!preview && alreadyAnswered && <CancelResponseButton formId={formId} />}
           <button
             onClick={submit}
-            disabled={pending}
-            className="rounded-lg bg-emerald-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
+            disabled={pending || preview}
+            title={preview ? "Envoi désactivé en mode aperçu" : undefined}
+            className="rounded-lg bg-emerald-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-60 disabled:hover:bg-emerald-600"
           >
             {pending ? "Envoi…" : "Envoyer"}
           </button>
@@ -348,6 +377,7 @@ function TextListInput({
         <div key={i} className="flex items-center gap-2">
           <input
             type="text"
+            inputMode={formatInputMode(format)}
             value={row}
             onChange={(e) => setRow(i, e.target.value)}
             onBlur={() => blurRow(i)}
@@ -472,6 +502,7 @@ function renderInput(
       return (
         <input
           type="text"
+          inputMode={formatInputMode(q.format)}
           value={value}
           onChange={(e) => setValue(q.id, e.target.value)}
           onBlur={onBlurField}

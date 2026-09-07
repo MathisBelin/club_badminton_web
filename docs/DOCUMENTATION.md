@@ -86,11 +86,12 @@ src/app/admin/layout.tsx      Garde requireAdmin + en-tête
 src/app/admin/page.tsx        Tableau de bord : liste, créer, publier/retirer, supprimer, lien de partage
 src/app/admin/modeles/page.tsx                Gestion des modèles (liste, création d'un formulaire, suppression)
 src/app/admin/forms/[id]/edit/page.tsx        Constructeur (charge le form) + barre de lien de partage
-src/app/admin/forms/[id]/responses/page.tsx   Visualiseur des réponses (tableau) + bouton export CSV
+src/app/admin/forms/[id]/responses/page.tsx   Visualiseur des réponses (tableau) + export CSV + ✎ modifier une saisie
 src/app/admin/forms/[id]/attente/page.tsx     Liste d'attente (classée par date d'inscription)
 src/app/admin/forms/[id]/responses/export/route.ts   Export CSV (route handler)
 
-src/app/forms/[id]/page.tsx        Remplissage (gate publié + connecté, préremplissage si déjà répondu)
+src/app/forms/[id]/page.tsx        Remplissage (gate publié + connecté, préremplissage si déjà répondu ;
+                                   aperçu admin d'un brouillon = état ignoré + envoi désactivé)
 src/app/forms/[id]/merci/page.tsx  Confirmation (+ « modifier ma réponse » si autorisé)
 src/app/forms/[id]/verification/page.tsx  Suivi des adresses à confirmer après envoi
 src/app/verifier/[token]/page.tsx  Page PUBLIQUE de vérification d'adresse (lien reçu par e-mail)
@@ -98,7 +99,8 @@ src/app/verifier/[token]/page.tsx  Page PUBLIQUE de vérification d'adresse (lie
 src/app/actions/forms.ts      Server Actions : createForm (vierge/modèle), saveForm, setFormLabel,
                               togglePublish, duplicateForm, saveAsTemplate, deleteTemplate, deleteForm
 src/app/actions/responses.ts  Server Actions : submitResponse (upsert par e-mail vérifié, liste
-                              d'attente, vérifications d'adresse), resendVerification, cancelResponse
+                              d'attente, vérifications d'adresse), resendVerification, cancelResponse,
+                              updateResponseAnswers (admin : corriger la saisie d'un répondant)
 
 src/components/AppHeader.tsx   En-tête (marque, lien Admin si admin, e-mail, déconnexion)
 src/components/FormBuilder.tsx (client) Constructeur : questions, types, options, réordonner, enregistrer
@@ -120,6 +122,7 @@ src/components/FormsTable.tsx (client) Tableau de bord : liste des formulaires +
 src/components/PublicFormsList.tsx (client) Accueil user : cartes des formulaires accessibles + recherche par nom
 src/components/TemplatesTable.tsx (client) Page Modèles : liste + recherche (nom/titre)
 src/components/CancelResponseButton.tsx (client) Annulation d'inscription (avec confirmation)
+src/components/EditResponseButton.tsx (client) Admin : corriger la saisie d'un répondant (fenêtre + updateResponseAnswers)
 src/components/NavigationProgress.tsx (client) Barre de progression dès le clic sur un lien
 src/components/PageLoader.tsx  Écran d'attente commun aux fichiers loading.tsx
 ```
@@ -308,7 +311,8 @@ Google Contacts (qui exige toujours qu'un admin soit connecté en Google).
   sont partagés : tout admin peut les utiliser et les supprimer. **Champ de recherche** (composant
   client `TemplatesTable`) filtrant par **nom ou titre de formulaire**.
 - **Réponses** (`/admin/forms/[id]/responses`) : un répondant par ligne (Nom, e-mail, Envoyé le,
-  Modifié le, puis une colonne par question), **filtre de recherche** et **export CSV**.
+  Modifié le, puis une colonne par question, et une colonne **Actions**), **filtre de recherche** et
+  **export CSV**.
   Le filtre (composant client `ResponsesFilter`) écrit le terme dans l'URL (`?q=`) après 300 ms ;
   la page, rendue côté serveur, applique `matchesResponse` (`src/lib/responseFilter.ts`) sur
   l'**e-mail** et le **nom** du compte Google du répondant et sur les réponses associées à un champ
@@ -316,6 +320,12 @@ Google Contacts (qui exige toujours qu'un admin soit connecté en Google).
   Un **indicateur de chargement** (`Spinner`) s'affiche dans le champ pendant la pause de saisie puis
   le re-rendu serveur (`useTransition`).
   Le lien **Exporter CSV** reprend le `?q=` courant : **on n'exporte que les lignes affichées**.
+- **Corriger une saisie** (colonne Actions) : bouton **« ✎ Modifier »** (`EditResponseButton`, client)
+  ouvrant une fenêtre avec un champ par question, pour corriger la saisie d'un répondant (ex. faute de
+  frappe). L'enregistrement appelle la Server Action **`updateResponseAnswers`** (`requireAdmin` +
+  vérification que le formulaire appartient à l'admin) qui n'écrit que les valeurs des questions **de ce
+  formulaire** ; elle **n'envoie aucun e-mail** et ne touche ni à la date d'envoi ni à la liste d'attente
+  (même comportement que la correction déclenchée par l'app desktop via l'API d'intégration, §10).
 
 ### 5.1 `saveForm` (upsert des questions)
 
@@ -382,6 +392,12 @@ l'image d'en-tête du store Blob (échec silencieux si le store n'est pas config
 - **`/forms/[id]`** : accessible seulement si `isPublished` (les admins peuvent **prévisualiser** un
   brouillon → bandeau « Aperçu »). Préremplissage si l'utilisateur a **déjà répondu** ; **verrouillé**
   si `allowEditResponse = false`.
+- **Mode aperçu** (`preview = !isPublished`, réservé aux admins) : l'aperçu **ne tient pas compte de
+  l'état de l'admin** — la réponse qu'il aurait déjà donnée et son éventuelle inscription (membre du
+  libellé) sont **ignorées** : on n'interroge pas `Response`, la page « déjà inscrit » et la bannière
+  « déjà répondu » ne s'affichent pas, et le formulaire apparaît **vierge et non verrouillé**. Le bouton
+  **Envoyer est désactivé** (mention *« Aperçu — l'envoi est désactivé »*, `FillForm.submit` refuse) :
+  aucune réponse n'est enregistrée depuis l'aperçu, et « Annuler mon inscription » est masqué.
 - **Liste d'attente** : dans le constructeur, chaque **option** d'une question à choix porte un
   effet (`Aucun` / `Ajouter à la liste d'attente`). À la soumission, si une option retenue porte
   `WAITLIST`, `Response.waitlistedAt` est horodaté — **à la première fois seulement**, pour que la
@@ -432,6 +448,9 @@ l'image d'en-tête du store Blob (échec silencieux si le store n'est pas config
   « Format imposé » → liste déroulante). Contrôlés **deux fois** : à l'envoi côté client
   (message immédiat) et dans `submitResponse` (autorité). Une valeur vide n'est pas contrôlée :
   c'est le rôle de l'option « obligatoire ». TEXT_LIST contrôle **chaque** valeur.
+  Le champ de saisie reçoit en plus un **`inputMode`** adapté au format (`formatInputMode` :
+  entier → `numeric`, décimal → `decimal`, téléphone → `tel`, e-mail → `email`) pour afficher le
+  **clavier adéquat** sur mobile.
 - **Vérification d'adresse** (format EMAIL + case « Faire vérifier l'adresse par e-mail ») :
   1. `submitResponse` enregistre la réponse puis appelle `syncVerifications`.
   2. Le répondant est redirigé vers **`/forms/[id]/verification`** s'il reste des adresses à
@@ -539,7 +558,7 @@ Réponses en JSON, dates ISO 8601.
 | `GET /api/integration/forms?owner=<e-mail>` | formulaires (id, titre, propriétaire, accessible, créé le, nb de réponses) ; `owner` filtre sur le compte créateur |
 | `GET /api/integration/forms/[id]/questions` | questions (hors `TEXT_BLOCK`) avec `options`, `optionActions` (`NONE`/`WAITLIST`), `format` et `contactField` |
 | `GET /api/integration/forms/[id]/responses` | réponses : e-mail vérifié, nom, `submittedAt`, `lastSubmittedAt`, `waitlistedAt`, `termsAcceptedAt`, `verifiedEmails`, `fields[questionId]` |
-| **`PATCH /api/integration/forms/[id]/responses/[responseId]`** *(écriture)* | corrige une réponse : `{ answers: { "<questionId>": "valeur" } }`. Utilisé par le desktop pour « garder l'état actuel » (la valeur du contact remplace celle saisie). Les questions d'un autre formulaire sont ignorées |
+| **`PATCH /api/integration/forms/[id]/responses/[responseId]`** *(écriture)* | corrige une réponse : `{ answers: { "<questionId>": "valeur" } }`. Utilisé par le desktop pour « garder l'état actuel » (la valeur du contact remplace celle saisie) **et pour la correction manuelle de la saisie** (bouton ✎, éditeurs typés). N'envoie aucun e-mail et ne touche ni à la date d'envoi ni à la liste d'attente. Les questions d'un autre formulaire sont ignorées |
 | **`DELETE /api/integration/forms/[id]/responses/[responseId]`** *(écriture)* | supprime une préinscription (la personne peut de nouveau répondre). Les adresses **déjà vérifiées** sont conservées, comme pour l'annulation faite par la personne |
 | **`POST /api/integration/notify/registration`** *(envoi d'e-mails)* | prévient des personnes que leur **inscription est validée**. Corps : `{ recipients: [{ email, name? }], formTitle? }` (le champ `name` est **ignoré**). Envoie un e-mail « inscription validée » **INDIVIDUEL** à chaque personne (destinataire = elle-même), **sans copie au club** et sans que les gens se voient entre eux — message commun (`sendRegistrationConfirmed`). L'envoi individuel évite le rejet Gmail « 550 5.7.1 rejected per SPAM policy » que provoque un envoi sans destinataire visible (BCC seul) — et renvoie `{ sent, failed, errors }` (`sent` = nb d'adresses si l'envoi a réussi). Déclenché par le desktop à la **validation** d'une préinscription. Nécessite `GMAIL_*` configuré |
 

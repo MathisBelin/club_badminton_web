@@ -29,11 +29,15 @@ export default async function FillFormPage({
   if (!form) notFound();
   if (!form.isPublished && !isAdmin(user.email)) notFound();
 
+  // Aperçu : un admin regarde un formulaire non accessible (brouillon ou clôturé). On
+  // montre alors le formulaire tel qu'il apparaîtra, sans tenir compte de l'état
+  // d'inscription de l'admin ni de ses réponses, et sans permettre d'envoyer.
+  const preview = !form.isPublished;
+
   // Déjà inscrit : membre du libellé Contacts associé au formulaire (lu dans Google
-  // Contacts, avec cache). Sa réponse est alors figée.
-  const alreadyRegistered = form.labelResource
-    ? await isRegistered(form.labelResource, user.email)
-    : false;
+  // Contacts, avec cache). Sa réponse est alors figée. (Ignoré en aperçu.)
+  const alreadyRegistered =
+    !preview && form.labelResource ? await isRegistered(form.labelResource, user.email) : false;
 
   // Déjà inscrit : on n'affiche pas du tout le formulaire, mais une page qui l'explique.
   if (alreadyRegistered) {
@@ -65,10 +69,13 @@ export default async function FillFormPage({
     );
   }
 
-  const existing = await prisma.response.findUnique({
-    where: { formId_respondentEmail: { formId: form.id, respondentEmail: user.email } },
-    include: { answers: true },
-  });
+  // En aperçu, on ne tient pas compte d'une réponse existante de l'admin : formulaire vierge.
+  const existing = preview
+    ? null
+    : await prisma.response.findUnique({
+        where: { formId_respondentEmail: { formId: form.id, respondentEmail: user.email } },
+        include: { answers: true },
+      });
   const previousAnswers: Record<string, string> = {};
   existing?.answers.forEach((a) => {
     previousAnswers[a.questionId] = a.value;
@@ -106,6 +113,7 @@ export default async function FillFormPage({
           headerImageUrl={form.headerImageUrl}
           attachments={parseAttachments(form.attachments)}
           respondentEmail={user.email}
+          preview={preview}
           locked={locked}
           alreadyAnswered={!!existing}
           termsText={form.termsEnabled ? form.termsText : ""}
