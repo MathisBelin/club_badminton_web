@@ -16,11 +16,11 @@ export default async function FillFormPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ annulee?: string }>;
+  searchParams: Promise<{ annulee?: string; apercu?: string }>;
 }) {
   const user = await requireUser();
   const { id } = await params;
-  const { annulee } = await searchParams;
+  const { annulee, apercu } = await searchParams;
 
   const form = await prisma.form.findUnique({
     where: { id },
@@ -29,10 +29,12 @@ export default async function FillFormPage({
   if (!form) notFound();
   if (!form.isPublished && !isAdmin(user.email)) notFound();
 
-  // Aperçu : un admin regarde un formulaire non accessible (brouillon ou clôturé). On
-  // montre alors le formulaire tel qu'il apparaîtra, sans tenir compte de l'état
-  // d'inscription de l'admin ni de ses réponses, et sans permettre d'envoyer.
-  const preview = !form.isPublished;
+  // Aperçu : un admin regarde un formulaire pour le prévisualiser — soit via le bouton
+  // « Aperçu » (`?apercu=1`, y compris sur un formulaire PUBLIÉ), soit parce que le
+  // formulaire n'est pas accessible (brouillon/clôturé). On montre alors le formulaire tel
+  // qu'il apparaîtra, sans tenir compte de l'état d'inscription de l'admin ni de ses
+  // réponses, et sans permettre d'envoyer.
+  const preview = isAdmin(user.email) && (apercu === "1" || !form.isPublished);
 
   // Déjà inscrit : membre du libellé Contacts associé au formulaire (lu dans Google
   // Contacts, avec cache). Sa réponse est alors figée. (Ignoré en aperçu.)
@@ -87,10 +89,11 @@ export default async function FillFormPage({
     <>
       <AppHeader />
       <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8">
-        {!form.isPublished && (
+        {preview && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
-            Aperçu — ce formulaire est {form.firstPublishedAt ? "clôturé" : "en brouillon"} (non accessible
-            aux utilisateurs).
+            {form.isPublished
+              ? "Aperçu — vous prévisualisez ce formulaire ; aucune réponse ne sera enregistrée."
+              : `Aperçu — ce formulaire est ${form.firstPublishedAt ? "clôturé" : "en brouillon"} (non accessible aux utilisateurs).`}
           </div>
         )}
         {annulee === "1" && !existing && (

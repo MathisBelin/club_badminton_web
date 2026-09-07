@@ -98,7 +98,7 @@ export default function FormsTable({ forms }: { forms: FormRow[] }) {
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
                       <Link
-                        href={`/forms/${f.id}`}
+                        href={`/forms/${f.id}?apercu=1`}
                         target="_blank"
                         title="Aperçu"
                         aria-label="Aperçu"

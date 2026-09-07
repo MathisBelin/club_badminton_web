@@ -392,12 +392,16 @@ l'image d'en-tête du store Blob (échec silencieux si le store n'est pas config
 - **`/forms/[id]`** : accessible seulement si `isPublished` (les admins peuvent **prévisualiser** un
   brouillon → bandeau « Aperçu »). Préremplissage si l'utilisateur a **déjà répondu** ; **verrouillé**
   si `allowEditResponse = false`.
-- **Mode aperçu** (`preview = !isPublished`, réservé aux admins) : l'aperçu **ne tient pas compte de
-  l'état de l'admin** — la réponse qu'il aurait déjà donnée et son éventuelle inscription (membre du
-  libellé) sont **ignorées** : on n'interroge pas `Response`, la page « déjà inscrit » et la bannière
-  « déjà répondu » ne s'affichent pas, et le formulaire apparaît **vierge et non verrouillé**. Le bouton
-  **Envoyer est désactivé** (mention *« Aperçu — l'envoi est désactivé »*, `FillForm.submit` refuse) :
-  aucune réponse n'est enregistrée depuis l'aperçu, et « Annuler mon inscription » est masqué.
+- **Mode aperçu** (`preview = isAdmin && (apercu === "1" || !isPublished)`) : déclenché quand un admin
+  ouvre le formulaire via le **bouton « Aperçu »** (les liens portent **`?apercu=1`** — donc **même sur
+  un formulaire publié/accessible**), ou parce que le formulaire n'est pas accessible (brouillon/clôturé).
+  L'aperçu **ne tient pas compte de l'état de l'admin** — la réponse qu'il aurait déjà donnée et son
+  éventuelle inscription (membre du libellé) sont **ignorées** : on n'interroge pas `Response`, la page
+  « déjà inscrit » et la bannière « déjà répondu » ne s'affichent pas, et le formulaire apparaît **vierge
+  et non verrouillé** (une bannière ambre le signale). Le bouton **Envoyer est désactivé** (mention
+  *« Aperçu — l'envoi est désactivé »*, `FillForm.submit` refuse) : aucune réponse n'est enregistrée
+  depuis l'aperçu, et « Annuler mon inscription » est masqué. Le **lien de partage** (`CopyLinkButton`),
+  lui, ne porte pas `?apercu=1` : les utilisateurs remplissent normalement.
 - **Liste d'attente** : dans le constructeur, chaque **option** d'une question à choix porte un
   effet (`Aucun` / `Ajouter à la liste d'attente`). À la soumission, si une option retenue porte
   `WAITLIST`, `Response.waitlistedAt` est horodaté — **à la première fois seulement**, pour que la

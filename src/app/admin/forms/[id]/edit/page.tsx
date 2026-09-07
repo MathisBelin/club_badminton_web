@@ -43,7 +43,7 @@ export default async function EditFormPage({ params }: { params: Promise<{ id: s
             className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100"
           />
           <SaveTemplateButton formId={form.id} defaultName={form.title} />
-          <Link href={`/forms/${form.id}`} className="text-emerald-700 hover:underline" target="_blank">
+          <Link href={`/forms/${form.id}?apercu=1`} className="text-emerald-700 hover:underline" target="_blank">
             Aperçu ↗
           </Link>
         </div>
