@@ -551,7 +551,7 @@ exactement sur les lignes affichées. Sans `?q=`, toutes les réponses sont expo
 
 ---
 
-## 10. API d'intégration desktop (lecture + deux écritures + notification e-mail)
+## 10. API d'intégration desktop (lecture + écritures + notification e-mail)
 
 Authentification par **clé partagée** : en-tête `x-api-key` = variable d'env `INTEGRATION_API_KEY`
 (`src/lib/integration.ts`). Ces routes sont **exclues du proxy** d'authentification (pas de session).
@@ -562,6 +562,7 @@ Réponses en JSON, dates ISO 8601.
 | `GET /api/integration/forms?owner=<e-mail>` | formulaires (id, titre, propriétaire, accessible, créé le, nb de réponses) ; `owner` filtre sur le compte créateur |
 | `GET /api/integration/forms/[id]/questions` | questions (hors `TEXT_BLOCK`) avec `options`, `optionActions` (`NONE`/`WAITLIST`), `format` et `contactField` |
 | `GET /api/integration/forms/[id]/responses` | réponses : e-mail vérifié, nom, `submittedAt`, `lastSubmittedAt`, `waitlistedAt`, `termsAcceptedAt`, `verifiedEmails`, `fields[questionId]` |
+| **`POST /api/integration/forms/[id]/responses`** *(écriture)* | crée une préinscription saisie à la main par l'admin (desktop) : `{ respondentEmail, respondentName?, answers: { "<questionId>": "valeur" } }`. **Sans vérification d'e-mail** (desktop de confiance) ; la **liste d'attente** est calculée à partir des options ; renvoie `{ responseId }` (201). Refuse (**409**) si une réponse existe déjà pour cet e-mail ; e-mail manquant/invalide → **400** |
 | **`PATCH /api/integration/forms/[id]/responses/[responseId]`** *(écriture)* | corrige une réponse : `{ answers: { "<questionId>": "valeur" } }`. Utilisé par le desktop pour « garder l'état actuel » (la valeur du contact remplace celle saisie) **et pour la correction manuelle de la saisie** (bouton ✎, éditeurs typés). N'envoie aucun e-mail et ne touche ni à la date d'envoi ni à la liste d'attente. Les questions d'un autre formulaire sont ignorées |
 | **`DELETE /api/integration/forms/[id]/responses/[responseId]`** *(écriture)* | supprime une préinscription (la personne peut de nouveau répondre). Les adresses **déjà vérifiées** sont conservées, comme pour l'annulation faite par la personne |
 | **`POST /api/integration/notify/registration`** *(envoi d'e-mails)* | prévient des personnes que leur **inscription est validée**. Corps : `{ recipients: [{ email, name? }], formTitle? }` (le champ `name` est **ignoré**). Envoie un e-mail « inscription validée » **INDIVIDUEL** à chaque personne (destinataire = elle-même), **sans copie au club** et sans que les gens se voient entre eux — message commun (`sendRegistrationConfirmed`). L'envoi individuel évite le rejet Gmail « 550 5.7.1 rejected per SPAM policy » que provoque un envoi sans destinataire visible (BCC seul) — et renvoie `{ sent, failed, errors }` (`sent` = nb d'adresses si l'envoi a réussi). Déclenché par le desktop à la **validation** d'une préinscription. Nécessite `GMAIL_*` configuré |
