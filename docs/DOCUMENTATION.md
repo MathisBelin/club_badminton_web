@@ -71,7 +71,7 @@ src/lib/questions.ts          Types d'éléments (labels FR), TYPES_WITH_OPTIONS
                               effets d'option (liste d'attente) et champs de contact
 src/lib/formStatus.ts         Statut d'un formulaire (Brouillon / Accessible / Inaccessible) + libellés/badges
 src/lib/formats.ts            Formats de saisie (e-mail/tél/entier/décimal) + contrôles partagés client & serveur
-src/lib/mailer.ts             Envoi des e-mails de vérification (SMTP Gmail, GMAIL_USER / GMAIL_APP_PASSWORD)
+src/lib/mailer.ts             Envoi des e-mails (SMTP nodemailer) : service dédié SMTP_* (recommandé) ou repli Gmail
 
 src/app/layout.tsx            Layout racine (lang fr, fond clair)
 src/app/loading.tsx           Écran d'attente par défaut (toute navigation) — voir aussi
@@ -132,7 +132,8 @@ src/components/PageLoader.tsx  Écran d'attente commun aux fichiers loading.tsx
 `src/app/actions/{auth,account,adminAccounts}.ts`,
 `src/app/{inscription,inscription/verification,verifier-compte/[token],compte}/…`,
 `src/app/admin/comptes/…`,
-`src/components/{CredentialsLoginForm,RegisterForm,PasswordInput,ResendAccountVerification,ProfileForm,ChangePasswordForm,AccountsTable,AttachmentsPicker}.tsx`.
+`src/components/{CredentialsLoginForm,ForgotPasswordSection,ConfirmResetForm,RegisterForm,PasswordInput,ResendAccountVerification,ProfileForm,ChangePasswordForm,AccountsTable,AttachmentsPicker}.tsx`,
+`src/lib/passwordReset.ts` (jeton signé), `src/app/reinitialiser/[token]/…`.
 
 ### 2.3 Navigation & protection
 - **`src/proxy.ts`** (convention Next 16, remplace `middleware.ts`) applique Auth.js à toutes les
@@ -259,14 +260,36 @@ Google Contacts (qui exige toujours qu'un admin soit connecté en Google).
 - **Connexion** (`/connexion`) : bouton Google **et** formulaire e-mail/mot de passe
   (`CredentialsLoginForm` → action `login`) ; `authorize` **refuse toute adresse non vérifiée**.
   Lien « Créer un compte ».
+  **Mot de passe oublié** (`ForgotPasswordSection` → action `requestPasswordReset`) : section
+  dépliable. Pour un **compte interne**, envoie un e-mail contenant un **lien de réinitialisation**
+  (`sendPasswordResetLinkEmail`) — le mot de passe **n'est PAS changé** à ce stade. Réponse **neutre**
+  (ne révèle pas l'existence du compte). Comptes Google : ignorés.
+  Le lien pointe vers la page **publique `/reinitialiser/[token]`** ; le bouton « Réinitialiser »
+  appelle `confirmPasswordReset` qui génère un **nouveau mot de passe**, pose `mustChangePassword`,
+  **valide l'adresse** (`emailVerifiedAt`) et l'envoie par e-mail (`sendNewPasswordEmail`) **tout en
+  l'affichant** sur la page (fiable même si l'e-mail est filtré). Le mot de passe ne change donc
+  qu'après **ouverture du lien** — preuve que le demandeur contrôle la boîte, ce qui empêche un tiers
+  de réinitialiser le mot de passe d'un membre en connaissant seulement son adresse.
+  **Jeton signé sans stockage** (`src/lib/passwordReset.ts`, HMAC `AUTH_SECRET`) : lié à
+  l'utilisateur, expire en **1 h**, et lié à l'empreinte du mot de passe actuel → **caduc dès** que
+  le mot de passe change (usage unique). Aucune table ni migration.
 - **Mon compte** (`/compte`, tout connecté) : compte interne → modifier prénom/nom (`updateProfile`)
   et mot de passe (`changePassword`, ancien requis, lève `mustChangePassword`) ; compte Google →
   affichage en lecture seule. Actions dans `src/app/actions/account.ts`.
 - **Gestion des comptes** (`/admin/comptes`, admin) : liste (nom, e-mail, type, statut vérifié,
-  date), recherche, **réinitialiser le mot de passe** → mot de passe temporaire **copiable affiché une
-  seule fois** (`resetPasswordForUser`, marque `mustChangePassword`), **supprimer** (interdit sur son
-  propre compte). Actions dans `src/app/actions/adminAccounts.ts`, tableau `AccountsTable`.
-- **Routes publiques** ajoutées au matcher du proxy : `/inscription`, `/verifier-compte`.
+  date). Le tableau (`AccountsTable`) propose : **recherche** (nom/e-mail), **filtres** par
+  **statut** (vérifié / en attente), **type** (interne / Google) et **date de création** (du…au),
+  bouton **« Afficher les doublons »** (comptes au **nom identique**, badge « doublon »), et
+  **pagination** (20/page). Actions par ligne :
+  - **Valider le compte** (compte interne en attente) : `verifyAccountManually` marque l'adresse
+    **vérifiée** (sans e-mail) → le membre peut se connecter avec **son** mot de passe. Utile quand
+    l'e-mail de confirmation n'arrive pas (laposte.net / SFR).
+  - **Réinitialiser le mot de passe** (avec **confirmation**) → mot de passe temporaire **copiable
+    affiché une seule fois** (`resetPasswordForUser`, marque `mustChangePassword`).
+  - **Supprimer** (avec confirmation ; interdit sur son propre compte).
+  Actions dans `src/app/actions/adminAccounts.ts`.
+- **Routes publiques** ajoutées au matcher du proxy : `/inscription`, `/verifier-compte`,
+  `/reinitialiser` (lien « mot de passe oublié », le jeton signé faisant preuve).
 
 ---
 
@@ -326,6 +349,11 @@ Google Contacts (qui exige toujours qu'un admin soit connecté en Google).
   vérification que le formulaire appartient à l'admin) qui n'écrit que les valeurs des questions **de ce
   formulaire** ; elle **n'envoie aucun e-mail** et ne touche ni à la date d'envoi ni à la liste d'attente
   (même comportement que la correction déclenchée par l'app desktop via l'API d'intégration, §10).
+- **Badge « vérifiée / en attente »** (questions « adresse à vérifier `verifyEmail` ») : une adresse
+  compte comme **vérifiée** si elle a été confirmée pour cette réponse (`EmailVerification`) **ou** si
+  elle appartient à un **compte** dont l'adresse est vérifiée — compte interne validé (y compris validé
+  **manuellement** par un admin) ou compte Google. Sans cela, un compte validé à la main restait affiché
+  « en attente ». La page interroge les `User` correspondants et fusionne ces adresses au jeu vérifié.
 
 ### 5.1 `saveForm` (upsert des questions)
 
@@ -486,12 +514,18 @@ reçu un e-mail de confirmation **dans les 7 derniers jours** et n'ayant pas enc
 - une adresse **vérifiée** sort de la liste (elle reste en base, horodatée) ;
 - une demande **périmée** (7 jours sans réponse) ou portant sur une adresse **retirée** de la
   réponse est supprimée — un envoi ultérieur repartira donc de zéro pour cette adresse.
-- **Envoi** (`src/lib/mailer.ts`) : **SMTP Gmail du club** via `nodemailer`
-  (`smtp.gmail.com:465`, transport réutilisé entre les envois), avec `GMAIL_USER`,
-  `GMAIL_APP_PASSWORD` (**mot de passe d'application** Google, validation en 2 étapes requise ;
-  les espaces sont tolérés) et `MAIL_FROM` facultatif (seul le nom affiché est repris, Gmail
-  impose l'adresse). Sans configuration, la réponse est **quand même enregistrée** et
-  la page de vérification affiche un avertissement (l'échec est journalisé côté serveur).
+- **Envoi** (`src/lib/mailer.ts`) : **SMTP via `nodemailer`**, transport réutilisé entre les
+  envois, avec **deux modes** (`smtpSettings()`), par ordre de priorité :
+  1. **Service dédié** (recommandé) si **`SMTP_HOST`** est défini : `SMTP_HOST`, `SMTP_PORT`
+     (587 par défaut ; 465 = chiffré d'emblée), `SMTP_USER`, `SMTP_PASS`, `SMTP_SECURE`
+     facultatif. À privilégier pour la **délivrabilité** — un Gmail gratuit passe mal auprès de
+     **laposte.net** et **SFR/numericable**, qui filtrent le transactionnel des adresses @gmail.
+  2. **Repli Gmail** (historique) si `SMTP_HOST` est absent : `GMAIL_USER`, `GMAIL_APP_PASSWORD`
+     (**mot de passe d'application** Google, validation en 2 étapes ; espaces tolérés).
+  Dans les deux cas, `MAIL_FROM` (facultatif) fixe l'expéditeur affiché — avec un service dédié,
+  **vérifier cette adresse** dans son tableau de bord. `senderAddress()` renvoie l'adresse de
+  `MAIL_FROM` (ou l'identifiant SMTP/Gmail). Sans configuration, la réponse est **quand même
+  enregistrée** et la page de vérification affiche un avertissement (l'échec est journalisé).
   Les liens sont construits à partir de l'origine de la requête (`headers()`).
 
 ---
@@ -539,8 +573,10 @@ exactement sur les lignes affichées. Sans `?q=`, toutes les réponses sont expo
   `vercel blob create-store <nom> --access public --yes`.
   La variable est ajoutée automatiquement aux 3 environnements ; en local elle est récupérée dans
   **`.env.local`** (fichier ignoré par git, généré par la même commande ou par `vercel env pull`).
-  ⚠️ **`GMAIL_USER` / `GMAIL_APP_PASSWORD`** (+ `MAIL_FROM` facultatif) sont **requis en prod** : la
-  vérification d'adresse des **comptes internes** est systématique (§4bis), donc sans envoi d'e-mails
+  ⚠️ **Envoi d'e-mails requis en prod** — soit un **service dédié** `SMTP_HOST` / `SMTP_PORT` /
+  `SMTP_USER` / `SMTP_PASS` (recommandé : Brevo, Mailjet… meilleure délivrabilité laposte/SFR), soit
+  le repli **`GMAIL_USER` / `GMAIL_APP_PASSWORD`** (+ `MAIL_FROM` facultatif dans les deux cas). Sans
+  envoi, la vérification d'adresse des **comptes internes** (systématique, §4bis) ne peut aboutir et
   aucun compte interne ne peut être activé. (La connexion **Google** et le reste fonctionnent sans.)
 - **Dépendance** : `bcryptjs` (hachage des mots de passe internes) — installée automatiquement par Vercel.
 - **Déploiement CLI par jeton** (non interactif) :

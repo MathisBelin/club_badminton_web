@@ -1,30 +1,83 @@
-// Envoi d'e-mails transactionnels (vérification d'adresse) via le compte Gmail du club,
-// en SMTP (nodemailer). Variables d'env :
-//   GMAIL_USER           adresse Gmail expéditrice, ex. lesfousduvolant69@gmail.com
-//   GMAIL_APP_PASSWORD   « mot de passe d'application » Google (16 caractères, PAS le mot
-//                        de passe du compte ; nécessite la validation en 2 étapes)
-//   MAIL_FROM            (facultatif) expéditeur affiché, ex. « Club de badminton <…@gmail.com> »
-//                        — Gmail réécrit l'adresse avec GMAIL_USER, seul le nom affiché suit.
-// Sans configuration, l'envoi échoue proprement (message explicite) : le reste de
-// l'application continue de fonctionner.
+// Envoi d'e-mails transactionnels (vérification d'adresse, confirmation d'inscription) en
+// SMTP (nodemailer). Deux modes, dans l'ordre de priorité :
+//
+// 1) Service d'e-mail dédié (RECOMMANDÉ pour la délivrabilité, notamment vers laposte.net
+//    et SFR/numericable) — Brevo, Mailjet, Resend, Scaleway… Variables d'env :
+//      SMTP_HOST    ex. smtp-relay.brevo.com (Brevo), in-v3.mailjet.com (Mailjet)
+//      SMTP_PORT    (facultatif) 587 par défaut ; 465 = connexion chiffrée d'emblée
+//      SMTP_USER    identifiant / login SMTP fourni par le service
+//      SMTP_PASS    clé / mot de passe SMTP fourni par le service
+//      SMTP_SECURE  (facultatif) "true"/"false" pour forcer ; sinon déduit du port (465 = true)
+//
+// 2) Compte Gmail (repli, comportement historique) — utilisé si SMTP_HOST n'est PAS défini :
+//      GMAIL_USER           adresse Gmail expéditrice, ex. lesfousduvolant69@gmail.com
+//      GMAIL_APP_PASSWORD   « mot de passe d'application » Google (16 caractères)
+//
+// Dans les deux cas, MAIL_FROM (facultatif) fixe l'expéditeur affiché, ex.
+// « Club de badminton <lesfousduvolant69@gmail.com> ». Avec un service dédié, pensez à
+// VÉRIFIER cette adresse d'expéditeur dans son tableau de bord.
+// Sans configuration, l'envoi échoue proprement : le reste de l'application continue.
 
 import nodemailer from "nodemailer";
 
+/// Paramètres SMTP effectifs : service dédié si SMTP_HOST est défini, sinon repli Gmail.
+function smtpSettings() {
+  const host = process.env.SMTP_HOST?.trim();
+  if (host) {
+    const port = Number(process.env.SMTP_PORT) || 587;
+    const secure = process.env.SMTP_SECURE
+      ? process.env.SMTP_SECURE.trim().toLowerCase() === "true"
+      : port === 465;
+    return {
+      host,
+      port,
+      secure,
+      user: process.env.SMTP_USER?.trim() ?? "",
+      pass: cleanSecret(process.env.SMTP_PASS),
+    };
+  }
+  // Repli : compte Gmail (SMTP direct). Le mot de passe d'application peut être collé avec
+  // des espaces par groupes de 4 → on les retire.
+  return {
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    user: process.env.GMAIL_USER?.trim() ?? "",
+    pass: cleanAppPassword(process.env.GMAIL_APP_PASSWORD),
+  };
+}
+
 export function mailerConfigured(): boolean {
-  return Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+  const s = smtpSettings();
+  return Boolean(s.host && s.user && s.pass);
 }
 
 export type SendResult = { ok: true } | { ok: false; error: string };
 
-/// Adresse d'expédition affichée aux répondants (« l'e-mail vient de… »).
+/// Adresse d'expédition affichée aux répondants (« l'e-mail vient de… ») : celle de
+/// MAIL_FROM si présente, sinon l'identifiant SMTP / Gmail.
 export function senderAddress(): string {
-  return process.env.GMAIL_USER?.trim() || "l'adresse du club";
+  return fromAddress() || smtpSettings().user || "l'adresse du club";
+}
+
+/// Adresse (sans le nom affiché) contenue dans MAIL_FROM, ex. « Club <x@y> » → « x@y ».
+function fromAddress(): string {
+  const raw = process.env.MAIL_FROM?.trim();
+  if (!raw) return "";
+  const match = raw.match(/<([^>]+)>/);
+  return (match ? match[1] : raw).trim();
+}
+
+/// Nettoie une valeur secrète collée : chevrons/guillemets qui l'entourent (garde les
+/// espaces internes éventuels d'un mot de passe).
+function cleanSecret(value: string | undefined): string {
+  return (value ?? "").trim().replace(/^[<"']|[>"']$/g, "");
 }
 
 /// Nettoie un mot de passe d'application collé depuis Google : espaces des groupes de 4,
 /// et éventuels chevrons ou guillemets entourant la valeur.
 function cleanAppPassword(value: string | undefined): string {
-  return (value ?? "").trim().replace(/^[<"']|[>"']$/g, "").replace(/\s+/g, "");
+  return cleanSecret(value).replace(/\s+/g, "");
 }
 
 // Le transport est réutilisé entre les envois, et recréé si les identifiants changent
@@ -33,17 +86,15 @@ let transporter: nodemailer.Transporter | null = null;
 let transporterKey = "";
 
 function getTransporter() {
-  const key = `${process.env.GMAIL_USER}|${cleanAppPassword(process.env.GMAIL_APP_PASSWORD)}`;
+  const s = smtpSettings();
+  const key = `${s.host}:${s.port}:${s.secure}|${s.user}|${s.pass}`;
   if (!transporter || transporterKey !== key) {
     transporterKey = key;
     transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: {
-        user: process.env.GMAIL_USER?.trim(),
-        pass: cleanAppPassword(process.env.GMAIL_APP_PASSWORD),
-      },
+      host: s.host,
+      port: s.port,
+      secure: s.secure,
+      auth: { user: s.user, pass: s.pass },
     });
   }
   return transporter;
@@ -64,7 +115,7 @@ async function deliver(
   }
   try {
     await getTransporter().sendMail({
-      from: process.env.MAIL_FROM || process.env.GMAIL_USER,
+      from: process.env.MAIL_FROM || smtpSettings().user,
       to: envelope.to,
       bcc: envelope.bcc,
       subject,
@@ -107,6 +158,59 @@ export async function sendAccountVerificationEmail(
       </p>
       <p style="font-size:13px;color:#71717a">
         Lien valable 7 jours. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.
+      </p>
+    </div>`;
+  return sendMail(to, subject, html, text);
+}
+
+/// E-mail « mot de passe oublié » : lien de confirmation. Le mot de passe n'est PAS changé
+/// tant que ce lien n'est pas ouvert (preuve que le demandeur contrôle bien la boîte —
+/// évite qu'un tiers change le mot de passe d'un membre en connaissant juste son adresse).
+export async function sendPasswordResetLinkEmail(to: string, resetUrl: string): Promise<SendResult> {
+  const subject = "Réinitialiser votre mot de passe — Formulaires du club";
+  const text =
+    `Vous avez demandé à réinitialiser le mot de passe de votre compte des formulaires du club.\n\n` +
+    `Cliquez sur ce lien pour confirmer et recevoir un nouveau mot de passe :\n${resetUrl}\n\n` +
+    `Ce lien est valable 1 heure. Si vous n'êtes pas à l'origine de cette demande, ignorez ce ` +
+    `message : votre mot de passe reste inchangé.`;
+  const html = `
+    <div style="font-family:system-ui,sans-serif;color:#18181b;line-height:1.5">
+      <p>Vous avez demandé à réinitialiser le mot de passe de votre compte des
+         <strong>formulaires du club</strong>.</p>
+      <p>Confirmez pour recevoir un nouveau mot de passe :</p>
+      <p>
+        <a href="${escapeHtml(resetUrl)}"
+           style="display:inline-block;background:#059669;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">
+          Réinitialiser mon mot de passe
+        </a>
+      </p>
+      <p style="font-size:13px;color:#71717a">
+        Lien valable 1 heure. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message :
+        votre mot de passe reste inchangé.
+      </p>
+    </div>`;
+  return sendMail(to, subject, html, text);
+}
+
+/// E-mail envoyé APRÈS confirmation du lien : contient le nouveau mot de passe temporaire
+/// (à changer après connexion).
+export async function sendNewPasswordEmail(to: string, password: string): Promise<SendResult> {
+  const subject = "Votre nouveau mot de passe — Formulaires du club";
+  const text =
+    `Vous avez demandé un nouveau mot de passe pour votre compte des formulaires du club.\n\n` +
+    `Votre nouveau mot de passe : ${password}\n\n` +
+    `Connectez-vous avec ce mot de passe, puis changez-le depuis « Mon compte ».\n` +
+    `Si vous n'êtes pas à l'origine de cette demande, changez votre mot de passe et prévenez le club.`;
+  const html = `
+    <div style="font-family:system-ui,sans-serif;color:#18181b;line-height:1.5">
+      <p>Vous avez demandé un nouveau mot de passe pour votre compte des
+         <strong>formulaires du club</strong>.</p>
+      <p>Votre nouveau mot de passe :</p>
+      <p style="font-size:18px;font-weight:700;letter-spacing:1px;background:#f4f4f5;
+                display:inline-block;padding:8px 14px;border-radius:8px">${escapeHtml(password)}</p>
+      <p>Connectez-vous avec ce mot de passe, puis changez-le depuis « Mon compte ».</p>
+      <p style="font-size:13px;color:#71717a">
+        Si vous n'êtes pas à l'origine de cette demande, changez votre mot de passe et prévenez le club.
       </p>
     </div>`;
   return sendMail(to, subject, html, text);

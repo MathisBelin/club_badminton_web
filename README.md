@@ -47,9 +47,15 @@ saisie** (e-mail / téléphone / entier / décimal) avec **vérification d'adres
    DATABASE_URL=…           # URL Neon
    ADMIN_EMAILS=matbelin5@gmail.com
    BLOB_READ_WRITE_TOKEN=…  # store Vercel Blob (images d'en-tête)
-   GMAIL_USER=…             # compte Gmail expéditeur des e-mails de vérification
+   # E-mails — mode recommandé : service dédié (Brevo, Mailjet…) pour la délivrabilité (laposte/SFR)
+   # SMTP_HOST=smtp-relay.brevo.com   # définir SMTP_HOST active ce mode
+   # SMTP_PORT=587                    # 587 par défaut ; 465 = chiffré d'emblée
+   # SMTP_USER=…                      # login SMTP du service
+   # SMTP_PASS=…                      # clé SMTP du service
+   # Repli Gmail (si SMTP_HOST absent) :
+   GMAIL_USER=…             # compte Gmail expéditeur des e-mails
    GMAIL_APP_PASSWORD=…     # mot de passe d'application Google (16 caractères, sans chevrons)
-   MAIL_FROM=Club de badminton <…@gmail.com>
+   MAIL_FROM=Club de badminton <…@gmail.com>   # expéditeur affiché (à vérifier chez le service dédié)
    INTEGRATION_API_KEY=…    # clé lue par l'app desktop (en-tête x-api-key)
    ```
    En local, `BLOB_READ_WRITE_TOKEN` et `INTEGRATION_API_KEY` sont facultatifs (images/documents et

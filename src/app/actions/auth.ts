@@ -6,9 +6,14 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { signIn } from "@/auth";
 import { prisma } from "@/lib/prisma";
-import { hashPassword, passwordError } from "@/lib/password";
+import { hashPassword, passwordError, generateTempPassword } from "@/lib/password";
 import { createAccountVerification } from "@/lib/accountVerification";
-import { sendAccountVerificationEmail } from "@/lib/mailer";
+import { createResetToken, verifyResetToken } from "@/lib/passwordReset";
+import {
+  sendAccountVerificationEmail,
+  sendPasswordResetLinkEmail,
+  sendNewPasswordEmail,
+} from "@/lib/mailer";
 
 /// Construit l'URL absolue de vérification à partir de l'origine de la requête.
 async function verifyAccountUrl(token: string): Promise<string> {
@@ -163,4 +168,74 @@ export async function login(
     throw error;
   }
   return undefined;
+}
+
+export type ForgotState = { ok?: boolean; message?: string } | undefined;
+
+// Réponse volontairement neutre : ne révèle pas si un compte existe pour cette adresse.
+const FORGOT_NEUTRAL =
+  "Si un compte interne existe pour cette adresse, un e-mail contenant un lien de " +
+  "réinitialisation vient d'être envoyé. Ouvrez-le pour recevoir un nouveau mot de passe.";
+
+/// URL absolue de réinitialisation, à partir de l'origine de la requête.
+async function resetUrl(token: string): Promise<string> {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? "http";
+  return `${proto}://${host}/reinitialiser/${token}`;
+}
+
+/// « Mot de passe oublié » (page de connexion) : si un compte INTERNE existe pour cette
+/// adresse, envoie un e-mail contenant un LIEN de réinitialisation. Le mot de passe n'est
+/// PAS changé ici : il ne le sera qu'après ouverture du lien (preuve que le demandeur
+/// contrôle la boîte — évite qu'un tiers réinitialise le mot de passe d'un membre). Réponse
+/// neutre. Les comptes Google sont ignorés (mot de passe géré par Google).
+export async function requestPasswordReset(
+  _prev: ForgotState,
+  formData: FormData,
+): Promise<ForgotState> {
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  if (!email) return { message: "Renseignez votre adresse e-mail." };
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (user && user.provider === "CREDENTIALS" && user.passwordHash) {
+    const token = createResetToken(user.id, user.passwordHash);
+    const sent = await sendPasswordResetLinkEmail(email, await resetUrl(token));
+    if (!sent.ok) console.error(`Mot de passe oublié : lien non envoyé à ${email} : ${sent.error}`);
+  }
+  // Toujours neutre : ne révèle pas si un compte existe.
+  return { ok: true, message: FORGOT_NEUTRAL };
+}
+
+export type ResetResult = { ok: true; password: string } | { ok: false; error: string };
+
+/// Confirme la réinitialisation (lien reçu par e-mail) : vérifie le jeton, génère un
+/// nouveau mot de passe, l'enregistre (marque « à changer », valide l'adresse) et l'envoie
+/// par e-mail. Le renvoie aussi pour l'afficher sur la page de confirmation (fiable même si
+/// l'e-mail est filtré). Le jeton devient caduc dès ce changement (usage unique).
+export async function confirmPasswordReset(token: string): Promise<ResetResult> {
+  const verified = await verifyResetToken(token);
+  if (!verified) {
+    return { ok: false, error: "Lien invalide ou expiré. Refaites une demande depuis la connexion." };
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: verified.userId } });
+  if (!user) return { ok: false, error: "Compte introuvable." };
+
+  const password = generateTempPassword();
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: await hashPassword(password),
+      mustChangePassword: true,
+      // Ouvrir le lien prouve le contrôle de l'adresse → on la considère vérifiée.
+      emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
+    },
+  });
+
+  // Envoi best-effort : la page affiche de toute façon le mot de passe.
+  const sent = await sendNewPasswordEmail(user.email, password);
+  if (!sent.ok) console.error(`Réinitialisation : nouveau mot de passe non envoyé à ${user.email} : ${sent.error}`);
+
+  return { ok: true, password };
 }

@@ -29,6 +29,7 @@ export default async function ComptesPage() {
     provider: u.provider,
     verified: u.emailVerifiedAt != null,
     createdAt: dateFmt.format(u.createdAt),
+    createdAtMs: u.createdAt.getTime(),
     isSelf: u.email.toLowerCase() === admin.email.toLowerCase(),
     isAdmin: isAdmin(u.email),
   }));

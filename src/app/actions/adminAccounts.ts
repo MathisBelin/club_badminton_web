@@ -29,6 +29,25 @@ export async function resetPasswordForUser(userId: string): Promise<TempPassword
   return { ok: true, password };
 }
 
+export type SimpleResult = { ok: true } | { ok: false; error: string };
+
+/// Valide manuellement un compte interne « en attente » : marque son adresse comme
+/// vérifiée (sans e-mail). Le membre peut alors se connecter avec le mot de passe qu'il a
+/// choisi. Utile quand l'e-mail de confirmation n'arrive pas (ex. laposte.net / SFR).
+export async function verifyAccountManually(userId: string): Promise<SimpleResult> {
+  await requireAdmin();
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) return { ok: false, error: "Compte introuvable." };
+  if (user.provider !== "CREDENTIALS") {
+    return { ok: false, error: "Compte Google : l'adresse est déjà vérifiée par Google." };
+  }
+  if (user.emailVerifiedAt) return { ok: false, error: "Ce compte est déjà vérifié." };
+
+  await prisma.user.update({ where: { id: userId }, data: { emailVerifiedAt: new Date() } });
+  revalidatePath("/admin/comptes");
+  return { ok: true };
+}
+
 export type DeleteResult = { ok: true } | { ok: false; error: string };
 
 /// Supprime un compte. Interdit de supprimer son propre compte (éviter l'auto-verrouillage).

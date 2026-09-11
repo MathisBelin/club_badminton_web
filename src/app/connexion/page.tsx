@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { auth, signIn } from "@/auth";
 import CredentialsLoginForm from "@/components/CredentialsLoginForm";
+import ForgotPasswordSection from "@/components/ForgotPasswordSection";
 
 // Page de connexion (publique) : Google OU e-mail/mot de passe (compte interne).
 export default async function ConnexionPage({
@@ -44,6 +45,8 @@ export default async function ConnexionPage({
         </div>
 
         <CredentialsLoginForm callbackUrl={callbackUrl} />
+
+        <ForgotPasswordSection />
       </div>
     </div>
   );

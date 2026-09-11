@@ -76,6 +76,35 @@ export default async function ResponsesPage({
     return { response: r, byQuestion, verified };
   });
 
+  // Une adresse est AUSSI « vérifiée » si elle appartient à un COMPTE dont l'adresse est
+  // vérifiée — compte interne validé (y compris validé à la main par un admin) ou compte
+  // Google. Sans cela, un compte validé manuellement resterait affiché « en attente » ici.
+  const verifyQuestionIds = questions.filter((q) => q.verifyEmail).map((q) => q.id);
+  if (verifyQuestionIds.length > 0) {
+    const emailSet = new Set<string>();
+    for (const { byQuestion } of rows) {
+      for (const qid of verifyQuestionIds) {
+        for (const e of (byQuestion.get(qid) ?? "").split(MULTI_SEP)) {
+          const t = e.trim().toLowerCase();
+          if (t) emailSet.add(t);
+        }
+      }
+    }
+    if (emailSet.size > 0) {
+      const accounts = await prisma.user.findMany({
+        where: {
+          email: { in: [...emailSet] },
+          OR: [{ emailVerifiedAt: { not: null } }, { provider: "GOOGLE" }],
+        },
+        select: { email: true },
+      });
+      const accountVerified = accounts.map((u) => u.email.toLowerCase());
+      if (accountVerified.length > 0) {
+        for (const row of rows) for (const e of accountVerified) row.verified.add(e);
+      }
+    }
+  }
+
   const dateFmt = new Intl.DateTimeFormat("fr-FR", { dateStyle: "short", timeStyle: "short" });
 
   return (
