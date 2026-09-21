@@ -7,12 +7,12 @@ import ForgotPasswordSection from "@/components/ForgotPasswordSection";
 export default async function ConnexionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ callbackUrl?: string }>;
+  searchParams: Promise<{ callbackUrl?: string; verifie?: string }>;
 }) {
   const session = await auth();
   if (session?.user) redirect("/");
 
-  const { callbackUrl } = await searchParams;
+  const { callbackUrl, verifie } = await searchParams;
 
   return (
     <div className="flex flex-1 items-center justify-center px-4 py-16">
@@ -22,6 +22,12 @@ export default async function ConnexionPage({
           <h1 className="mt-3 text-xl font-semibold text-zinc-900">Formulaires du club</h1>
           <p className="mt-1 text-sm text-zinc-500">Connectez-vous pour accéder aux formulaires.</p>
         </div>
+
+        {verifie === "1" && (
+          <p className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-center text-sm text-emerald-700">
+            ✅ Adresse confirmée. Votre compte est activé, connectez-vous.
+          </p>
+        )}
 
         <form
           action={async () => {

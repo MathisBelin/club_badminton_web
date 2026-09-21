@@ -42,13 +42,16 @@ model User {
 }
 
 /// Demande de vérification de l'adresse e-mail d'un COMPTE interne (distincte de
-/// EmailVerification, qui concerne les adresses saisies dans les réponses). Le jeton
-/// circule dans le lien envoyé par e-mail à la création du compte.
+/// EmailVerification, qui concerne les adresses saisies dans les réponses). Un CODE à
+/// chiffres est envoyé par e-mail à la création du compte ; la personne le saisit ensuite.
 model AccountVerification {
   id        String   @id @default(cuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String   @unique
+  /// Code à saisir (chiffres). Non unique : la recherche est toujours faite par utilisateur.
+  code      String   @default("")
+  /// Nombre de saisies erronées : au-delà d'un plafond, il faut renvoyer un nouveau code.
+  attempts  Int      @default(0)
   createdAt DateTime @default(now())
   expiresAt DateTime
   verifiedAt DateTime?
@@ -192,8 +195,7 @@ model FormTemplate {
 }
 
 /// Demande de vérification d'une adresse e-mail saisie dans une réponse.
-/// Le jeton (secret) circule dans le lien envoyé par e-mail ; la page de
-/// vérification est donc accessible sans connexion.
+/// Un CODE à chiffres est envoyé par e-mail ; le répondant le saisit sur la page de suivi.
 /// `responseId` est facultatif : si la réponse est annulée/supprimée, les adresses
 /// DÉJÀ VÉRIFIÉES sont conservées (responseId = null) — seules les demandes en
 /// attente sont supprimées.
@@ -204,7 +206,10 @@ model EmailVerification {
   questionId String
   question   Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
   email      String
-  token      String    @unique
+  /// Code à saisir (chiffres). Non unique : la recherche est faite par réponse + adresse.
+  code       String    @default("")
+  /// Nombre de saisies erronées : au-delà d'un plafond, il faut renvoyer un nouveau code.
+  attempts   Int       @default(0)
   createdAt  DateTime  @default(now())
   expiresAt  DateTime
   verifiedAt DateTime?

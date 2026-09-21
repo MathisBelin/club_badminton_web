@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { senderAddress } from "@/lib/mailer";
+import VerifyAccountForm from "@/components/VerifyAccountForm";
 import ResendAccountVerification from "@/components/ResendAccountVerification";
 
-// Page d'attente affichée juste après la création d'un compte quand la vérification
-// d'e-mail est exigée : invite à confirmer l'adresse avant de pouvoir se connecter.
+// Page affichée juste après la création d'un compte : la personne saisit le CODE reçu
+// par e-mail pour confirmer son adresse avant de pouvoir se connecter.
 export default async function InscriptionVerificationPage({
   searchParams,
 }: {
@@ -20,30 +21,35 @@ export default async function InscriptionVerificationPage({
 
         {mailFailed ? (
           <p className="mt-3 text-sm text-amber-700">
-            Votre compte a bien été créé, mais l&apos;e-mail de confirmation n&apos;a pas pu être
-            envoyé. Réessayez ci-dessous ou contactez le club.
+            Votre compte a bien été créé, mais l&apos;e-mail contenant le code n&apos;a pas pu être
+            envoyé. Renvoyez-le ci-dessous ou contactez le club.
           </p>
         ) : (
           <p className="mt-3 text-sm text-zinc-600">
-            Un e-mail de confirmation vient d&apos;être envoyé
+            Un code de confirmation vient d&apos;être envoyé
             {email ? (
               <>
                 {" "}à <span className="font-medium text-zinc-800">{email}</span>
               </>
             ) : null}{" "}
-            (expéditeur : {senderAddress()}). Cliquez sur le lien qu&apos;il contient pour activer
-            votre compte, puis connectez-vous.
+            (expéditeur : {senderAddress()}). Saisissez-le ci-dessous pour activer votre compte.
           </p>
         )}
 
-        {email && (
+        {email ? (
           <>
-            <p className="mt-4 text-sm text-zinc-500">
+            <VerifyAccountForm email={email} />
+
+            <p className="mt-6 text-sm text-zinc-500">
               Vous ne voyez pas l&apos;e-mail ? Vérifiez vos courriers indésirables (spam), ou
-              renvoyez-le :
+              renvoyez un code :
             </p>
             <ResendAccountVerification email={email} />
           </>
+        ) : (
+          <p className="mt-4 text-sm text-zinc-600">
+            Retournez à l&apos;inscription pour créer votre compte et recevoir un code.
+          </p>
         )}
 
         <p className="mt-6 text-sm">

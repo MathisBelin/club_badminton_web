@@ -8,12 +8,14 @@ export default NextAuth(authConfig).auth;
 export const config = {
   // Protège tout sauf : API auth, API blob (qui vérifie elle-même la session et
   // doit répondre en JSON plutôt qu'en redirection), pages de connexion et
-  // d'inscription (compte interne), page de vérification d'adresse e-mail et de
-  // compte (ouvertes depuis la messagerie, le jeton fait office de preuve),
+  // d'inscription (compte interne), page de réinitialisation de mot de passe
+  // (ouverte depuis la messagerie, le jeton fait office de preuve),
   // page d'ouverture depuis le desktop (`/ouvrir`, gère elle-même la connexion),
   // assets Next, favicon.
+  // La vérification d'e-mail se fait désormais par CODE saisi sur une page protégée
+  // (compte : /inscription/verification ; réponse : /forms/[id]/verification).
   // `api/integration` est authentifiée par clé d'API (x-api-key), pas par session.
   matcher: [
-    "/((?!api/auth|api/blob|api/integration|connexion|inscription|ouvrir|ouvrir-mail|verifier|verifier-compte|reinitialiser|_next/static|_next/image|favicon.ico).*)",
+    "/((?!api/auth|api/blob|api/integration|connexion|inscription|ouvrir|ouvrir-mail|reinitialiser|_next/static|_next/image|favicon.ico).*)",
   ],
 };

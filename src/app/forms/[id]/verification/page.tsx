@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import AppHeader from "@/components/AppHeader";
-import ResendVerification from "@/components/ResendVerification";
+import VerifyEmailCode from "@/components/VerifyEmailCode";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
 import { mailerConfigured, senderAddress } from "@/lib/mailer";
@@ -45,8 +45,9 @@ export default async function VerificationPage({ params }: { params: Promise<{ i
             qu&apos;après confirmation de {plural ? "vos adresses e-mail" : "votre adresse e-mail"}.
           </p>
           <p className="mt-3 text-sm text-zinc-600">
-            Un e-mail de confirmation a été envoyé de la part de{" "}
-            <strong>{senderAddress()}</strong> {plural ? "aux adresses suivantes" : "à l'adresse suivante"} :
+            Un code de confirmation a été envoyé de la part de{" "}
+            <strong>{senderAddress()}</strong> {plural ? "aux adresses suivantes" : "à l'adresse suivante"}.
+            Saisissez {plural ? "le code reçu à chaque adresse" : "le code reçu"} ci-dessous :
           </p>
 
           <ul className="mt-3 space-y-3">
@@ -54,16 +55,16 @@ export default async function VerificationPage({ params }: { params: Promise<{ i
               <li key={v.id} className="rounded-lg bg-zinc-50 px-3 py-2">
                 <div className="text-sm font-medium text-zinc-800">{v.email}</div>
                 <div className="mt-2">
-                  <ResendVerification formId={form.id} email={v.email} />
+                  <VerifyEmailCode formId={form.id} email={v.email} />
                 </div>
               </li>
             ))}
           </ul>
 
           <p className="mt-4 text-sm text-zinc-600">
-            Ouvrez cet e-mail puis cliquez sur <strong>« Vérifier mon adresse »</strong> : vous serez
-            alors redirigé vers la confirmation de prise en compte. Le lien est valable 7 jours ; si
-            vous ne recevez rien (pensez aux indésirables), utilisez le bouton de renvoi ci-dessus.
+            Le code est valable 10 minutes. Dès que {plural ? "toutes vos adresses sont confirmées" : "votre adresse est confirmée"},
+            votre réponse est prise en compte. Si vous ne recevez rien (pensez aux indésirables),
+            utilisez le bouton de renvoi.
           </p>
 
           {!mailerConfigured() && (

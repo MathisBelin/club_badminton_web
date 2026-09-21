@@ -7,21 +7,13 @@ import { z } from "zod";
 import { signIn } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, passwordError, generateTempPassword } from "@/lib/password";
-import { createAccountVerification } from "@/lib/accountVerification";
+import { createAccountVerification, verifyAccountCode } from "@/lib/accountVerification";
 import { createResetToken, verifyResetToken } from "@/lib/passwordReset";
 import {
   sendAccountVerificationEmail,
   sendPasswordResetLinkEmail,
   sendNewPasswordEmail,
 } from "@/lib/mailer";
-
-/// Construit l'URL absolue de vérification à partir de l'origine de la requête.
-async function verifyAccountUrl(token: string): Promise<string> {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? "http";
-  return `${proto}://${host}/verifier-compte/${token}`;
-}
 
 // État renvoyé aux formulaires (useActionState) : erreurs par champ + message général.
 export type AuthFormState =
@@ -101,10 +93,10 @@ export async function register(
     ? await prisma.user.update({ where: { id: existing.id }, data })
     : await prisma.user.create({ data });
 
-  // On envoie l'e-mail de confirmation et on renvoie vers la page d'attente
+  // On envoie le code de confirmation et on renvoie vers la page de saisie du code
   // (aucune connexion tant que l'adresse n'est pas confirmée).
-  const token = await createAccountVerification(user.id);
-  const sent = await sendAccountVerificationEmail(email, await verifyAccountUrl(token));
+  const code = await createAccountVerification(user.id);
+  const sent = await sendAccountVerificationEmail(email, code);
   redirect(`/inscription/verification?email=${encodeURIComponent(email)}${sent.ok ? "" : "&mail=ko"}`);
 }
 
@@ -141,10 +133,36 @@ export async function resendAccountVerification(
     return { ok: true };
   }
 
-  const token = await createAccountVerification(user.id);
-  const sent = await sendAccountVerificationEmail(email, await verifyAccountUrl(token));
+  const code = await createAccountVerification(user.id);
+  const sent = await sendAccountVerificationEmail(email, code);
   if (!sent.ok) return { error: "L'envoi de l'e-mail a échoué. Réessayez plus tard." };
   return { ok: true };
+}
+
+export type VerifyAccountState = { error?: string } | undefined;
+
+// Messages affichés selon le résultat de la vérification du code.
+const VERIFY_ACCOUNT_MESSAGES: Record<string, string> = {
+  expire: "Ce code a expiré. Renvoyez-en un nouveau ci-dessous.",
+  trop: "Trop de tentatives. Renvoyez un nouveau code ci-dessous.",
+  invalide: "Code incorrect. Vérifiez les chiffres et réessayez.",
+  absente: "Code introuvable. Renvoyez un nouveau code ci-dessous.",
+};
+
+/// Vérifie le code de confirmation d'un compte interne (page d'attente d'inscription).
+/// En cas de succès (ou d'adresse déjà confirmée), redirige vers la connexion.
+export async function verifyAccountEmail(
+  _prev: VerifyAccountState,
+  formData: FormData,
+): Promise<VerifyAccountState> {
+  const email = String(formData.get("email") || "").trim().toLowerCase();
+  const code = String(formData.get("code") || "");
+
+  const result = await verifyAccountCode(email, code);
+  if (result.state === "ok" || result.state === "deja") {
+    redirect("/connexion?verifie=1");
+  }
+  return { error: VERIFY_ACCOUNT_MESSAGES[result.state] ?? "Vérification impossible." };
 }
 
 /// Connecte un compte interne existant (e-mail + mot de passe).

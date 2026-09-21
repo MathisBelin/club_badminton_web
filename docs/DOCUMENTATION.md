@@ -28,8 +28,8 @@ interne** (e-mail + mot de passe, pour les membres sans adresse Gmail). Interfac
   **admins qui l'autorisent**, lecture des **libellés Google Contacts** (`contacts.readonly`, §10.1) ;
   **aucune écriture** dans Google.
 - **Comptes internes** (§4bis) : création (nom/prénom/e-mail/mot de passe), **unicité de l'e-mail**,
-  **vérification d'adresse systématique** (un lien de confirmation par e-mail est **toujours** exigé
-  avant la 1re connexion), page **« Mon compte »** (modifier profil + mot de passe) et menu admin
+  **vérification d'adresse systématique** (un **code de confirmation à 6 chiffres** envoyé par e-mail
+  est **toujours** exigé avant la 1re connexion), page **« Mon compte »** (modifier profil + mot de passe) et menu admin
   **« Gestion des comptes »** (réinitialiser un mot de passe → mot de passe temporaire copiable,
   supprimer un compte).
 
@@ -93,8 +93,7 @@ src/app/admin/forms/[id]/responses/export/route.ts   Export CSV (route handler)
 src/app/forms/[id]/page.tsx        Remplissage (gate publié + connecté, préremplissage si déjà répondu ;
                                    aperçu admin d'un brouillon = état ignoré + envoi désactivé)
 src/app/forms/[id]/merci/page.tsx  Confirmation (+ « modifier ma réponse » si autorisé)
-src/app/forms/[id]/verification/page.tsx  Suivi des adresses à confirmer après envoi
-src/app/verifier/[token]/page.tsx  Page PUBLIQUE de vérification d'adresse (lien reçu par e-mail)
+src/app/forms/[id]/verification/page.tsx  Suivi des adresses à confirmer après envoi (saisie du CODE reçu)
 
 src/app/actions/forms.ts      Server Actions : createForm (vierge/modèle), saveForm, setFormLabel,
                               togglePublish, duplicateForm, saveAsTemplate, deleteTemplate, deleteForm
@@ -110,7 +109,7 @@ src/components/icons.tsx       Icônes SVG monochromes (œil, crayon, graphique,
 src/components/Select.tsx      (client) Liste déroulante réutilisable « type Select2 » (react-select, thème emerald)
 src/components/HeaderImagePicker.tsx (client) Image d'en-tête : upload direct vers Vercel Blob
 src/components/DeleteFormButton.tsx  (client) Suppression d'un formulaire avec fenêtre de confirmation
-src/components/ResendVerification.tsx (client) Bouton « renvoyer l'e-mail de confirmation »
+src/components/VerifyEmailCode.tsx (client) Saisie du CODE reçu à une adresse d'une réponse + renvoi
 src/components/BusyLink.tsx    (client) Lien de navigation avec spinner de chargement
 src/components/CreateFormButton.tsx (client) Fenêtre « vierge ou à partir d'un modèle » + choix du libellé
 src/components/ConnectContacts.tsx (client) Bandeau admin : autoriser la lecture de Google Contacts
@@ -130,16 +129,20 @@ src/components/PageLoader.tsx  Écran d'attente commun aux fichiers loading.tsx
 **Fichiers ajoutés pour les comptes internes & pièces jointes** (détails §4bis / §5.5) :
 `src/lib/{password,accountVerification,attachments}.ts`,
 `src/app/actions/{auth,account,adminAccounts}.ts`,
-`src/app/{inscription,inscription/verification,verifier-compte/[token],compte}/…`,
+`src/app/{inscription,inscription/verification,compte}/…`,
 `src/app/admin/comptes/…`,
-`src/components/{CredentialsLoginForm,ForgotPasswordSection,ConfirmResetForm,RegisterForm,PasswordInput,ResendAccountVerification,ProfileForm,ChangePasswordForm,AccountsTable,AttachmentsPicker}.tsx`,
+`src/components/{CredentialsLoginForm,ForgotPasswordSection,ConfirmResetForm,RegisterForm,PasswordInput,VerifyAccountForm,ResendAccountVerification,ProfileForm,ChangePasswordForm,AccountsTable,AttachmentsPicker}.tsx`,
+`src/lib/{codeConstants,verificationCode}.ts` (codes de vérification),
 `src/lib/passwordReset.ts` (jeton signé), `src/app/reinitialiser/[token]/…`.
 
 ### 2.3 Navigation & protection
 - **`src/proxy.ts`** (convention Next 16, remplace `middleware.ts`) applique Auth.js à toutes les
   routes **sauf** `api/auth`, `api/blob`, `api/integration`, `/connexion`, `/inscription`, `/ouvrir`,
-  `/verifier/*`, `/verifier-compte/*` et les assets. Le callback `authorized` autorise
+  `/reinitialiser` et les assets. Le callback `authorized` autorise
   uniquement les utilisateurs connectés → sinon redirection vers `/connexion`.
+  (La vérification d'e-mail se fait par **code saisi** sur une page : `/inscription/verification`
+  — publique via le préfixe `/inscription` — pour un compte, `/forms/[id]/verification` — protégée —
+  pour une adresse de réponse. Plus de page publique à jeton `/verifier(-compte)`.)
 
 - **`/ouvrir`** (publique) : point d'entrée ouvert **depuis l'application desktop** (bouton
   « Ouvrir l'application web »). Le desktop y passe l'e-mail du compte Google auquel il est connecté
@@ -169,7 +172,8 @@ src/components/PageLoader.tsx  Écran d'attente commun aux fichiers loading.tsx
   (bcrypt, compte interne), `provider` (`GOOGLE`/`CREDENTIALS`), `emailVerifiedAt?`,
   `mustChangePassword`, `createdAt`. Upsert à chaque connexion Google ; créé par `register` pour un
   compte interne. Le rôle admin **n'est pas** stocké (calculé via `ADMIN_EMAILS`). Voir §4bis.
-- **AccountVerification** : `id`, `userId`, `token` (unique), `createdAt`, `expiresAt` (7 j),
+- **AccountVerification** : `id`, `userId`, `code` (6 chiffres, **non unique** : recherche par
+  utilisateur), `attempts` (plafond d'essais avant renvoi), `createdAt`, `expiresAt` (10 min),
   `verifiedAt?` — vérification de l'adresse d'un **compte** interne (distincte de `EmailVerification`,
   qui vise les adresses **saisies dans les réponses**).
 - **enum QuestionType** : `TEXT`, `PARAGRAPH`, `RADIO`, `CHECKBOX`, `DROP_DOWN`, `DATE`
@@ -195,8 +199,9 @@ src/components/PageLoader.tsx  Écran d'attente commun aux fichiers loading.tsx
   (`FIRST_NAME`/`LAST_NAME`/`PHONE`/`EMAIL`/`SECONDARY_EMAIL`, TEXT/TEXT_LIST), `format QuestionFormat?`
   (`EMAIL`/`PHONE`/`INTEGER`/`DECIMAL`, uniquement TEXT/TEXT_LIST) et `verifyEmail`
   (format EMAIL : adresse à confirmer, cf. §6.1). Suppression en cascade avec le Form.
-- **EmailVerification** : `id`, `responseId?`, `questionId`, `email`, `token` (unique, secret du
-  lien), `createdAt`, `expiresAt` (7 jours), `verifiedAt?`. `responseId` est **nullable**
+- **EmailVerification** : `id`, `responseId?`, `questionId`, `email`, `code` (6 chiffres, **non
+  unique** : recherche par réponse + adresse), `attempts` (plafond d'essais avant renvoi),
+  `createdAt`, `expiresAt` (10 min), `verifiedAt?`. `responseId` est **nullable**
   (`onDelete: SetNull`) : une adresse **vérifiée survit à l'annulation** de l'inscription et reste
   dans la liste des adresses confirmées.
 - **FormTemplate** : `id`, `name`, `ownerEmail` (créateur, informatif), `content Json`
@@ -250,10 +255,13 @@ Google Contacts (qui exige toujours qu'un admin soit connecté en Google).
   « techniquement pas inscrit » : il **ne bloque pas** une nouvelle inscription ; ses infos (nom /
   mot de passe) sont **réécrites** et la vérification relancée (la 1re inscription non aboutie
   n'emprisonne pas l'adresse). Hache, crée (ou met à jour) le compte
-  **inactif** (`emailVerifiedAt = null`). La **vérification d'adresse est systématique** : e-mail de
-  confirmation (`sendAccountVerificationEmail`), redirection vers **`/inscription/verification`**
-  (page d'attente + bouton « Renvoyer »). Jeton en table **`AccountVerification`** (7 jours) ; la page
-  publique **`/verifier-compte/[token]`** (`consumeAccountVerification`) pose `emailVerifiedAt`.
+  **inactif** (`emailVerifiedAt = null`). La **vérification d'adresse est systématique** : un
+  **code à 6 chiffres** est envoyé par e-mail (`sendAccountVerificationEmail`), stocké en table
+  **`AccountVerification`** (10 min). Redirection vers **`/inscription/verification`** où la personne
+  **saisit le code** (`VerifyAccountForm` → action `verifyAccountEmail` → `verifyAccountCode`) : en
+  cas de succès, `emailVerifiedAt` est posé et l'on redirige vers `/connexion?verifie=1` (bandeau de
+  confirmation). Bouton **« Renvoyer un code »** (`resendAccountVerification`) et **plafond d'essais**
+  (`attempts`, `MAX_CODE_ATTEMPTS`) au-delà duquel il faut redemander un code.
   But : vérifier que l'adresse **existe** et que c'est bien **son titulaire** qui s'inscrit.
   ⚠️ L'envoi d'e-mails (`GMAIL_*`) est donc un **prérequis** : sans lui, aucun compte interne ne peut
   être activé (le bouton « Renvoyer » resterait sans effet).
@@ -288,8 +296,9 @@ Google Contacts (qui exige toujours qu'un admin soit connecté en Google).
     affiché une seule fois** (`resetPasswordForUser`, marque `mustChangePassword`).
   - **Supprimer** (avec confirmation ; interdit sur son propre compte).
   Actions dans `src/app/actions/adminAccounts.ts`.
-- **Routes publiques** ajoutées au matcher du proxy : `/inscription`, `/verifier-compte`,
-  `/reinitialiser` (lien « mot de passe oublié », le jeton signé faisant preuve).
+- **Routes publiques** ajoutées au matcher du proxy : `/inscription` (dont
+  `/inscription/verification`, saisie du code de compte) et `/reinitialiser` (lien « mot de passe
+  oublié », le jeton signé faisant preuve).
 
 ---
 
@@ -488,32 +497,32 @@ l'image d'en-tête du store Blob (échec silencieux si le store n'est pas config
   2. Le répondant est redirigé vers **`/forms/[id]/verification`** s'il reste des adresses à
      confirmer, sinon directement vers **`/forms/[id]/merci`**. La page de vérification annonce
      qu'il reste **une dernière étape** avant la prise en compte, nomme l'expéditeur
-     (`senderAddress()`, soit `GMAIL_USER`) et propose un bouton **« Renvoyer l'e-mail de
-     confirmation »** par adresse (`resendVerification`).
-  3. Le lien pointe vers **`/verifier/[token]`** — page **publique et autonome** (exclue du matcher
-     du proxy, le jeton aléatoire de 32 octets faisant preuve) : elle horodate `verifiedAt` puis
-     **affiche sur place** une confirmation « Adresse confirmée » (avec un lien vers l'accueil), de
-     même que les pages « lien expiré » / « lien inconnu ». Elle ne **redirige jamais** vers une
-     page protégée (ex. `/merci`) : le lien est le plus souvent ouvert depuis une **autre session
-     Gmail** que celle éventuellement connectée dans le navigateur ; une redirection ferait atterrir
-     la personne dans la **mauvaise session**.
+     (`senderAddress()`, soit `GMAIL_USER`) et affiche, **par adresse**, un **champ de saisie du code**
+     (`VerifyEmailCode`) + un bouton **« Renvoyer un code »** (`resendVerification`).
+  3. Chaque adresse reçoit un **code à 6 chiffres** (stocké dans `EmailVerification.code`). Le
+     répondant, **connecté**, saisit le code sur cette page protégée → action **`verifyEmailCode`** :
+     elle contrôle le code (plafond `attempts` / expiration), horodate `verifiedAt`, puis **redirige
+     vers `/forms/[id]/merci`** dès qu'il ne reste plus d'adresse en attente (sinon la ligne vérifiée
+     disparaît de la liste). Plus de page publique à jeton `/verifier/[token]`.
   4. Le **tableau des réponses** (admin) affiche chaque adresse avec l'état *vérifiée* / *en attente*.
 
 #### Règles de `syncVerifications` (envoi unique)
 
 `EmailVerification` sert de **liste back-end** (jamais affichée telle quelle) des adresses ayant
-reçu un e-mail de confirmation **dans les 7 derniers jours** et n'ayant pas encore répondu
+reçu un e-mail de confirmation **dans les 10 dernières minutes** et n'ayant pas encore répondu
 (`verifiedAt = null` et `expiresAt > maintenant`). À chaque envoi de la réponse :
 
 - l'adresse **égale à celle du répondant** (e-mail Google, déjà vérifié) **ou déjà confirmée par le
   passé** (n'importe quelle réponse, même annulée) est marquée `verifiedAt` **d'office**, sans e-mail ;
 - une adresse **déjà présente dans la liste** ne redéclenche **aucun** e-mail, même si la réponse
-  est modifiée plusieurs fois : seul le bouton **« Renvoyer »** relance un envoi, ce qui régénère
-  le jeton et **repart pour 7 jours**. Un renvoi est **refusé s'il intervient moins de 60 s** après
-  l'envoi précédent (anti-spam) — même garde-fou sur la vérification des **comptes internes** (§4bis) ;
+  est modifiée plusieurs fois : seul le bouton **« Renvoyer un code »** relance un envoi, ce qui régénère
+  le code (et remet `attempts` à 0) et **repart pour 10 minutes**. Un renvoi est **refusé s'il intervient
+  moins de 60 s** après l'envoi précédent (anti-spam) — même garde-fou sur la vérification des
+  **comptes internes** (§4bis) ;
 - une adresse **vérifiée** sort de la liste (elle reste en base, horodatée) ;
-- une demande **périmée** (7 jours sans réponse) ou portant sur une adresse **retirée** de la
-  réponse est supprimée — un envoi ultérieur repartira donc de zéro pour cette adresse.
+- une demande **périmée** (10 minutes sans réponse), **au plafond d'essais** (`attempts`) ou portant sur
+  une adresse **retirée** de la réponse invite à renvoyer un code (ou est supprimée) — un envoi
+  ultérieur repartira donc de zéro pour cette adresse.
 - **Envoi** (`src/lib/mailer.ts`) : **SMTP via `nodemailer`**, transport réutilisé entre les
   envois, avec **deux modes** (`smtpSettings()`), par ordre de priorité :
   1. **Service dédié** (recommandé) si **`SMTP_HOST`** est défini : `SMTP_HOST`, `SMTP_PORT`

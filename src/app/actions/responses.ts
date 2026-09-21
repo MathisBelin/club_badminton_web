@@ -1,7 +1,5 @@
 "use server";
 
-import { randomBytes } from "node:crypto";
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -10,6 +8,13 @@ import { requireUser, requireAdmin } from "@/lib/session";
 import { MULTI_SEP, isQuestion } from "@/lib/questions";
 import { checkAnswer, emailsOf } from "@/lib/formats";
 import { sendVerificationEmail } from "@/lib/mailer";
+import {
+  generateCode,
+  normalizeCode,
+  CODE_LENGTH,
+  MAX_CODE_ATTEMPTS,
+  CODE_TTL_MS,
+} from "@/lib/verificationCode";
 import { isRegistered } from "@/lib/googleContacts";
 
 const submitSchema = z.object({
@@ -29,9 +34,6 @@ const submitSchema = z.object({
 export type SubmitInput = z.input<typeof submitSchema>;
 
 export type SubmitResult = { ok: true } | { ok: false; error: string };
-
-// Durée de validité d'un lien de vérification d'adresse.
-const VERIFICATION_DAYS = 7;
 
 // Délai minimal entre deux envois d'un même e-mail de confirmation (anti-spam).
 const RESEND_COOLDOWN_MS = 60_000;
@@ -205,8 +207,8 @@ async function syncVerifications(
     existing.filter((v) => !obsoleteIds.has(v.id)).map((v) => [v.email.toLowerCase(), v]),
   );
 
-  const expiresAt = new Date(now.getTime() + VERIFICATION_DAYS * 24 * 3600 * 1000);
-  const toSend: Array<{ email: string; token: string }> = [];
+  const expiresAt = new Date(now.getTime() + CODE_TTL_MS);
+  const toSend: Array<{ email: string; code: string }> = [];
   let pending = 0;
 
   for (const [key, target] of wanted) {
@@ -234,12 +236,12 @@ async function syncVerifications(
         responseId,
         questionId: target.questionId,
         email: target.email,
-        token: randomBytes(32).toString("base64url"),
+        code: generateCode(),
         expiresAt,
         // Adresse de connexion du répondant : vérifiée par Google, donc validée d'office.
         verifiedAt: isRespondent ? now : null,
       },
-      select: { email: true, token: true },
+      select: { email: true, code: true },
     });
     if (!isRespondent) {
       toSend.push(created);
@@ -248,10 +250,9 @@ async function syncVerifications(
   }
 
   if (toSend.length > 0) {
-    const origin = await requestOrigin();
     await Promise.all(
       toSend.map(async (v) => {
-        const result = await sendVerificationEmail(v.email, formTitle, `${origin}/verifier/${v.token}`);
+        const result = await sendVerificationEmail(v.email, formTitle, v.code);
         if (!result.ok) {
           // L'échec n'annule pas la réponse : il est signalé sur la page de suivi.
           console.error(`Vérification e-mail non envoyée à ${v.email} : ${result.error}`);
@@ -319,20 +320,81 @@ export async function resendVerification(
   const updated = await prisma.emailVerification.update({
     where: { id: verification.id },
     data: {
-      token: randomBytes(32).toString("base64url"),
-      expiresAt: new Date(Date.now() + VERIFICATION_DAYS * 24 * 3600 * 1000),
+      code: generateCode(),
+      attempts: 0,
+      expiresAt: new Date(Date.now() + CODE_TTL_MS),
       createdAt: new Date(),
     },
-    select: { email: true, token: true },
+    select: { email: true, code: true },
   });
 
-  const origin = await requestOrigin();
-  const result = await sendVerificationEmail(
-    updated.email,
-    response.form.title,
-    `${origin}/verifier/${updated.token}`,
-  );
+  const result = await sendVerificationEmail(updated.email, response.form.title, updated.code);
   if (!result.ok) return { ok: false, error: result.error };
+
+  revalidatePath(`/forms/${formId}/verification`);
+  return { ok: true };
+}
+
+/// Vérifie le code saisi pour une adresse d'une réponse du répondant connecté.
+/// En cas de succès : marque l'adresse confirmée ; si plus rien n'est en attente,
+/// redirige vers la page de remerciement. Sinon renvoie une erreur affichable.
+export async function verifyEmailCode(
+  formId: string,
+  email: string,
+  rawCode: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireUser();
+  const code = normalizeCode(rawCode);
+  if (code.length !== CODE_LENGTH) {
+    return { ok: false, error: "Code incorrect. Vérifiez les chiffres et réessayez." };
+  }
+
+  const response = await prisma.response.findUnique({
+    where: { formId_respondentEmail: { formId, respondentEmail: user.email } },
+    select: { id: true },
+  });
+  if (!response) return { ok: false, error: "Réponse introuvable." };
+
+  const verification = (
+    await prisma.emailVerification.findMany({ where: { responseId: response.id } })
+  ).find((v) => v.email.toLowerCase() === email.trim().toLowerCase());
+  if (!verification) return { ok: false, error: "Adresse inconnue pour cette réponse." };
+  if (verification.verifiedAt) return { ok: true }; // déjà confirmée
+
+  if (verification.expiresAt.getTime() < Date.now()) {
+    return { ok: false, error: "Ce code a expiré. Renvoyez-en un nouveau." };
+  }
+  if (verification.attempts >= MAX_CODE_ATTEMPTS) {
+    return { ok: false, error: "Trop de tentatives. Renvoyez un nouveau code." };
+  }
+
+  if (verification.code !== code) {
+    await prisma.emailVerification.update({
+      where: { id: verification.id },
+      data: { attempts: { increment: 1 } },
+    });
+    const remaining = MAX_CODE_ATTEMPTS - (verification.attempts + 1);
+    return {
+      ok: false,
+      error:
+        remaining <= 0
+          ? "Trop de tentatives. Renvoyez un nouveau code."
+          : "Code incorrect. Vérifiez les chiffres et réessayez.",
+    };
+  }
+
+  await prisma.emailVerification.update({
+    where: { id: verification.id },
+    data: { verifiedAt: new Date() },
+  });
+
+  // S'il ne reste plus aucune adresse à confirmer, la réponse est prise en compte.
+  const stillPending = await prisma.emailVerification.count({
+    where: { responseId: response.id, verifiedAt: null },
+  });
+  if (stillPending === 0) {
+    redirect(`/forms/${formId}/merci`);
+  }
 
   revalidatePath(`/forms/${formId}/verification`);
   return { ok: true };
@@ -405,12 +467,4 @@ export async function updateResponseAnswers(
 
   revalidatePath(`/admin/forms/${form.id}/responses`);
   return { ok: true };
-}
-
-/// Origine absolue de la requête courante (pour construire les liens des e-mails).
-async function requestOrigin(): Promise<string> {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  return `${proto}://${host}`;
 }
