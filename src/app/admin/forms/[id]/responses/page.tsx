@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import { MULTI_SEP, contactFieldLabel, isQuestion } from "@/lib/questions";
 import { matchesResponse, searchableQuestionIds } from "@/lib/responseFilter";
+import { isAnonymousEmail, respondentLabel } from "@/lib/anonymous";
 import ResponsesFilter, { SearchPendingProvider, SearchResults } from "@/components/ResponsesFilter";
 import EditResponseButton from "@/components/EditResponseButton";
 
@@ -181,8 +182,14 @@ export default async function ResponsesPage({
                 return (
                   <tr key={response.id} className="hover:bg-zinc-50">
                     <td className="px-4 py-3">
-                      <div className="font-medium text-zinc-900">{response.respondentName ?? "—"}</div>
-                      <div className="text-xs text-zinc-500">{response.respondentEmail}</div>
+                      <div className="font-medium text-zinc-900">
+                        {respondentLabel(response.respondentName, response.respondentEmail)}
+                      </div>
+                      {isAnonymousEmail(response.respondentEmail) ? (
+                        <div className="text-xs italic text-zinc-400">sans e-mail</div>
+                      ) : (
+                        <div className="text-xs text-zinc-500">{response.respondentEmail}</div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-zinc-600">{dateFmt.format(response.submittedAt)}</td>
                     <td className="px-4 py-3 text-zinc-600">
@@ -201,7 +208,7 @@ export default async function ResponsesPage({
                       <EditResponseButton
                         formId={form.id}
                         responseId={response.id}
-                        respondentName={response.respondentName ?? response.respondentEmail}
+                        respondentName={respondentLabel(response.respondentName, response.respondentEmail, response.respondentEmail)}
                         fields={questions.map((q) => ({
                           questionId: q.id,
                           title: q.title,

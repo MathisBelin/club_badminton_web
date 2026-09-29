@@ -4,6 +4,7 @@ import { isAdmin } from "@/lib/admin";
 import { auth } from "@/auth";
 import { isQuestion } from "@/lib/questions";
 import { matchesResponse, searchableQuestionIds } from "@/lib/responseFilter";
+import { isAnonymousEmail, respondentLabel } from "@/lib/anonymous";
 
 // Export CSV des réponses d'un formulaire (admin propriétaire uniquement).
 // Le paramètre ?q= reprend le filtre de la page : on n'exporte que les lignes affichées.
@@ -38,8 +39,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const byQuestion = new Map(r.answers.map((a) => [a.questionId, a.value]));
     const edited = r.lastSubmittedAt.getTime() - r.submittedAt.getTime() > 1000;
     const row = [
-      r.respondentEmail,
-      r.respondentName ?? "",
+      // Anonyme : pas d'e-mail-marqueur dans l'export.
+      isAnonymousEmail(r.respondentEmail) ? "" : r.respondentEmail,
+      respondentLabel(r.respondentName, r.respondentEmail, ""),
       r.submittedAt.toISOString(),
       edited ? r.lastSubmittedAt.toISOString() : "",
       ...questions.map((q) => byQuestion.get(q.id) ?? ""),

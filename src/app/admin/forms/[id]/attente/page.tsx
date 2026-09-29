@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import { isQuestion } from "@/lib/questions";
+import { isAnonymousEmail, respondentLabel } from "@/lib/anonymous";
 
 // Liste d'attente d'un formulaire : répondants ayant choisi une option marquée
 // « Ajouter à la liste d'attente », classés par ordre d'arrivée (priorité).
@@ -75,8 +76,14 @@ export default async function WaitlistPage({ params }: { params: Promise<{ id: s
                   <tr key={r.id} className="hover:bg-zinc-50">
                     <td className="px-4 py-3 font-medium text-zinc-900">{index + 1}</td>
                     <td className="px-4 py-3">
-                      <div className="font-medium text-zinc-900">{r.respondentName ?? "—"}</div>
-                      <div className="text-xs text-zinc-500">{r.respondentEmail}</div>
+                      <div className="font-medium text-zinc-900">
+                        {respondentLabel(r.respondentName, r.respondentEmail)}
+                      </div>
+                      {isAnonymousEmail(r.respondentEmail) ? (
+                        <div className="text-xs italic text-zinc-400">sans e-mail</div>
+                      ) : (
+                        <div className="text-xs text-zinc-500">{r.respondentEmail}</div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-zinc-600">
                       {r.waitlistedAt ? dateFmt.format(r.waitlistedAt) : "—"}
