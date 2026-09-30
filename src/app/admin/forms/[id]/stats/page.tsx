@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
 import { MULTI_SEP, TYPES_WITH_OPTIONS, isQuestion } from "@/lib/questions";
+import ChoiceDonut, { type DonutSlice } from "@/components/ChoiceDonut";
 
 // Palette catégorielle validée (thème clair) — voir skill dataviz. Assignée dans l'ordre,
 // jamais cyclée : au-delà de 8 tranches, le surplus est replié dans « Autres ».
@@ -12,71 +13,7 @@ const PALETTE = [
 ];
 const OTHER_COLOR = "#9aa0a6";
 
-type Slice = { label: string; count: number; color: string };
-
-// --- Géométrie du camembert (donut) -------------------------------------------------
-function polar(cx: number, cy: number, r: number, angle: number): [number, number] {
-  return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
-}
-
-function donutSlicePath(
-  cx: number, cy: number, R: number, r: number, a0: number, a1: number,
-): string {
-  const [x0o, y0o] = polar(cx, cy, R, a0);
-  const [x1o, y1o] = polar(cx, cy, R, a1);
-  const [x1i, y1i] = polar(cx, cy, r, a1);
-  const [x0i, y0i] = polar(cx, cy, r, a0);
-  const large = a1 - a0 > Math.PI ? 1 : 0;
-  return `M ${x0o} ${y0o} A ${R} ${R} 0 ${large} 1 ${x1o} ${y1o} `
-    + `L ${x1i} ${y1i} A ${r} ${r} 0 ${large} 0 ${x0i} ${y0i} Z`;
-}
-
-// Un camembert (donut) + total au centre.
-function Donut({ slices, total, unit }: { slices: Slice[]; total: number; unit: string }) {
-  const R = 92;
-  const r = 56;
-  const cx = 100;
-  const cy = 100;
-  const start = -Math.PI / 2;
-
-  const visible = slices.filter((s) => s.count > 0);
-  const single = visible.length === 1;
-
-  let angle = start;
-  const arcs = visible.map((s) => {
-    const frac = s.count / total;
-    const a0 = angle;
-    const a1 = angle + frac * Math.PI * 2;
-    angle = a1;
-    const pct = Math.round(frac * 1000) / 10;
-    return { ...s, a0, a1, pct };
-  });
-
-  return (
-    <svg viewBox="0 0 200 200" className="h-52 w-52 shrink-0" role="img"
-      aria-label={`Répartition : ${arcs.map((a) => `${a.label} ${a.pct}%`).join(", ")}`}>
-      {single ? (
-        <circle cx={cx} cy={cy} r={(R + r) / 2} fill="none"
-          stroke={arcs[0].color} strokeWidth={R - r} />
-      ) : (
-        arcs.map((a, i) => (
-          <path key={i} d={donutSlicePath(cx, cy, R, r, a.a0, a.a1)}
-            fill={a.color} stroke="#ffffff" strokeWidth={2}>
-            <title>{`${a.label} : ${a.count} (${a.pct}%)`}</title>
-          </path>
-        ))
-      )}
-      <text x={cx} y={cy - 4} textAnchor="middle"
-        className="fill-zinc-900" style={{ fontSize: 26, fontWeight: 700 }}>
-        {total}
-      </text>
-      <text x={cx} y={cy + 16} textAnchor="middle"
-        className="fill-zinc-500" style={{ fontSize: 11 }}>
-        {unit}
-      </text>
-    </svg>
-  );
-}
+type Slice = DonutSlice;
 
 export default async function StatsPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireAdmin();
@@ -172,22 +109,8 @@ export default async function StatsPage({ params }: { params: Promise<{ id: stri
               {total === 0 ? (
                 <p className="mt-6 text-sm text-zinc-400">Aucune réponse pour l&apos;instant.</p>
               ) : (
-                <div className="mt-4 flex flex-wrap items-center gap-5">
-                  <Donut slices={slices} total={total} unit={isMulti ? "sélections" : "réponses"} />
-                  <ul className="min-w-[9rem] flex-1 space-y-1.5">
-                    {slices.filter((s) => s.count > 0).map((s) => {
-                      const pct = Math.round((s.count / total) * 1000) / 10;
-                      return (
-                        <li key={s.label} className="flex items-center gap-2 text-sm">
-                          <span className="inline-block h-3 w-3 shrink-0 rounded-sm"
-                            style={{ backgroundColor: s.color }} aria-hidden />
-                          <span className="flex-1 text-zinc-700">{s.label}</span>
-                          <span className="tabular-nums font-medium text-zinc-900">{s.count}</span>
-                          <span className="tabular-nums text-zinc-400">{pct}%</span>
-                        </li>
-                      );
-                    })}
-                  </ul>
+                <div className="mt-4">
+                  <ChoiceDonut slices={slices} total={total} unit={isMulti ? "sélections" : "réponses"} />
                 </div>
               )}
             </div>
