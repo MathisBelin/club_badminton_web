@@ -86,7 +86,8 @@ src/app/admin/layout.tsx      Garde requireAdmin + en-tête
 src/app/admin/page.tsx        Tableau de bord : liste, créer, publier/retirer, supprimer, lien de partage
 src/app/admin/modeles/page.tsx                Gestion des modèles (liste, création d'un formulaire, suppression)
 src/app/admin/forms/[id]/edit/page.tsx        Constructeur (charge le form) + barre de lien de partage
-src/app/admin/forms/[id]/responses/page.tsx   Visualiseur des réponses (tableau) + export CSV + ✎ modifier une saisie
+src/app/admin/forms/[id]/responses/page.tsx   Visualiseur des réponses (tableau) + export CSV + ✎ modifier une saisie + 📊 Statistiques
+src/app/admin/forms/[id]/stats/page.tsx       Statistiques : camemberts (donut SVG) des questions à choix
 src/app/admin/forms/[id]/attente/page.tsx     Liste d'attente (classée par date d'inscription)
 src/app/admin/forms/[id]/responses/export/route.ts   Export CSV (route handler)
 
@@ -350,6 +351,14 @@ Google Contacts (qui exige toujours qu'un admin soit connecté en Google).
     **« Anonyme »** (à défaut de nom), la ligne e-mail indique *« sans e-mail »*, et l'export CSV
     laisse la colonne e-mail vide (`src/lib/anonymous.ts` : `isAnonymousEmail` / `respondentLabel`).
     Même traitement sur la page **Liste d'attente**.
+  - **📊 Statistiques** (`/admin/forms/[id]/stats`) : bouton affiché dès qu'il existe une **question à
+    choix** (choix unique / cases à cocher / liste déroulante) et au moins une réponse. La page montre,
+    par question à choix, un **camembert (donut SVG rendu côté serveur)** de la répartition des réponses
+    + une **légende** (couleur, libellé, effectif, pourcentage) et le total au centre. Choix unique /
+    liste déroulante = part des **répondants** ; cases à cocher = part des **sélections** (un répondant
+    peut en cocher plusieurs). Palette catégorielle validée (skill *dataviz*) assignée dans l'ordre,
+    non cyclée : au-delà de 8 tranches, le surplus est replié dans **« Autres »** (les valeurs hors
+    options le sont aussi). Thème clair (comme tout le site).
   Le filtre (composant client `ResponsesFilter`) écrit le terme dans l'URL (`?q=`) après 300 ms ;
   la page, rendue côté serveur, applique `matchesResponse` (`src/lib/responseFilter.ts`) sur
   l'**e-mail** et le **nom** du compte Google du répondant et sur les réponses associées à un champ

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/session";
-import { MULTI_SEP, contactFieldLabel, isQuestion } from "@/lib/questions";
+import { MULTI_SEP, TYPES_WITH_OPTIONS, contactFieldLabel, isQuestion } from "@/lib/questions";
 import { matchesResponse, searchableQuestionIds } from "@/lib/responseFilter";
 import { isAnonymousEmail, respondentLabel } from "@/lib/anonymous";
 import ResponsesFilter, { SearchPendingProvider, SearchResults } from "@/components/ResponsesFilter";
@@ -62,6 +62,9 @@ export default async function ResponsesPage({
   // Liste d'attente : proposée dès qu'une option du formulaire y place les répondants.
   const hasWaitlist = form.questions.some((q) => q.optionActions.includes("WAITLIST"));
   const waitlistCount = form.responses.filter((r) => r.waitlistedAt).length;
+
+  // Statistiques (camemberts) : proposées s'il existe une question à choix.
+  const hasChoiceStats = form.questions.some((q) => TYPES_WITH_OPTIONS.includes(q.type));
 
   // Filtre e-mail / nom / prénom : porte sur le compte du répondant et sur les réponses
   // associées à un champ de contact. L'export CSV reçoit le même terme.
@@ -124,6 +127,14 @@ export default async function ResponsesPage({
         </div>
         <div className="flex items-center gap-3">
           {form.responses.length > 0 && <ResponsesFilter initial={search} />}
+          {hasChoiceStats && form.responses.length > 0 && (
+            <Link
+              href={`/admin/forms/${form.id}/stats`}
+              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm text-zinc-700 hover:bg-zinc-100"
+            >
+              📊 Statistiques
+            </Link>
+          )}
           {hasWaitlist && (
             <Link
               href={`/admin/forms/${form.id}/attente`}
